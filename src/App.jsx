@@ -88,6 +88,37 @@ const fetchCSV = (url) => new Promise((resolve) => {
   });
 });
 
+// Smart CSV fetcher for financial sheets with decorative title rows
+// Parses raw (no header), finds the real header row by matching known column names, then re-maps
+const fetchFinCSV = (url, knownHeaders) => new Promise((resolve) => {
+  Papa.parse(url, {
+    download: true, header: false, skipEmptyLines: true,
+    complete: (r) => {
+      const rows = r.data || [];
+      // Find the row that best matches known headers
+      let headerIdx = -1;
+      let bestScore = 0;
+      for (let i = 0; i < Math.min(rows.length, 20); i++) {
+        const row = rows[i].map(c => String(c || "").trim().toLowerCase());
+        const score = knownHeaders.reduce((s, h) => s + (row.some(c => c.includes(h.toLowerCase())) ? 1 : 0), 0);
+        if (score > bestScore) { bestScore = score; headerIdx = i; }
+      }
+      if (headerIdx === -1 || bestScore < 2) { resolve([]); return; }
+      const headers = rows[headerIdx].map(c => String(c || "").trim());
+      const data = [];
+      for (let i = headerIdx + 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.every(c => !c || String(c).trim() === "")) continue;
+        const obj = {};
+        headers.forEach((h, ci) => { if (h) obj[h] = row[ci] || ""; });
+        data.push(obj);
+      }
+      resolve(data);
+    },
+    error: () => resolve([]),
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════
 // THEME
 // ═══════════════════════════════════════════════════════════════
@@ -213,9 +244,16 @@ export default function App() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [ventas, viajes, finResumen, finBancos, finDAP, finCalendario, finFondos, flotaViajes, flotaEquipos] = await Promise.all(
-        Object.values(CSV).map(fetchCSV)
-      );
+      const [ventas, viajes, flotaViajes, flotaEquipos] = await Promise.all([
+        fetchCSV(CSV.ventas), fetchCSV(CSV.viajes), fetchCSV(CSV.flotaViajes), fetchCSV(CSV.flotaEquipos),
+      ]);
+      const [finResumen, finBancos, finDAP, finCalendario, finFondos] = await Promise.all([
+        fetchFinCSV(CSV.finResumen, ["Concepto", "Monto", "Ganancia", "Mes", "Comprometido", "Guardado"]),
+        fetchFinCSV(CSV.finBancos, ["Fecha", "Banco", "Saldo Inicial", "Saldo Final", "Monto"]),
+        fetchFinCSV(CSV.finDAP, ["Fecha Inicio", "Vencimiento", "Tasa", "Monto Inicial", "Monto Final", "Ganancia", "Vigente"]),
+        fetchFinCSV(CSV.finCalendario, ["Fecha", "Monto", "Guardado", "Falta", "Concepto", "Estado"]),
+        fetchFinCSV(CSV.finFondos, ["Empresa", "Fondo", "Administradora", "Monto Invertido", "Valor Actual", "Rentabilidad"]),
+      ]);
       setData({ ventas, viajes, finResumen, finBancos, finDAP, finCalendario, finFondos, flotaViajes, flotaEquipos });
       setLastUpdate(new Date());
     } catch (e) { console.error(e); }
