@@ -354,15 +354,34 @@ export default function App() {
     });
     const totalCaja = Object.values(saldosBancos).reduce((s, v) => s + v, 0);
 
-    // FINANZAS — DAP vigentes
+    // FINANZAS — DAP vigentes (separados por tipo)
     const dapRows = (data.finDAP || []).filter(r => {
       const vigente = (r.Vigente || r.vigente || "").toString().toLowerCase();
       return vigente === "si" || vigente === "sí" || vigente === "yes";
     });
-    const totalDAP = dapRows.reduce((s, r) => s + parseNum(r["Monto Inicial"] || r.MontoInicial || r.monto_inicial), 0);
-    const gananciaDAP = dapRows.reduce((s, r) => s + parseNum(r.Ganancia || r.ganancia), 0);
+    
+    const getDapType = (r) => {
+      const t = (r.Tipo || r.tipo || "").toString().toLowerCase().trim();
+      if (t.includes("credito") || t.includes("crédito")) return "credito";
+      if (t.includes("inversion") || t.includes("inversión")) return "inversion";
+      return "trabajo";
+    };
+    
+    const dapTrabajo = dapRows.filter(r => getDapType(r) === "trabajo");
+    const dapInversion = dapRows.filter(r => getDapType(r) === "inversion");
+    const dapCredito = dapRows.filter(r => getDapType(r) === "credito");
+    
+    const totalDAPTrabajo = dapTrabajo.reduce((s, r) => s + parseNum(r["Monto Inicial"] || r.MontoInicial || r.monto_inicial), 0);
+    const totalDAPInversion = dapInversion.reduce((s, r) => s + parseNum(r["Monto Inicial"] || r.MontoInicial || r.monto_inicial), 0);
+    const totalDAPCredito = dapCredito.reduce((s, r) => s + parseNum(r["Monto Inicial"] || r.MontoInicial || r.monto_inicial), 0);
+    const totalDAP = totalDAPTrabajo + totalDAPInversion + totalDAPCredito;
+    
+    const gananciaDAPTrabajo = dapTrabajo.reduce((s, r) => s + parseNum(r.Ganancia || r.ganancia), 0);
+    const gananciaDAPInversion = dapInversion.reduce((s, r) => s + parseNum(r.Ganancia || r.ganancia), 0);
+    const gananciaDAPCredito = dapCredito.reduce((s, r) => s + parseNum(r.Ganancia || r.ganancia), 0);
+    const gananciaDAP = gananciaDAPTrabajo + gananciaDAPInversion + gananciaDAPCredito;
 
-    // Próximos vencimientos DAP
+    // Próximos vencimientos DAP (todos los tipos)
     const dapProximos = dapRows.map(r => ({
       banco: r.Banco || r.banco,
       monto: parseNum(r["Monto Inicial"] || r.MontoInicial || r.monto_inicial),
@@ -370,7 +389,8 @@ export default function App() {
       vencimiento: parseDate(r.Vencimiento || r.vencimiento),
       tipo: r.Tipo || r.tipo,
       tasa: r.Tasa || r.tasa,
-    })).filter(r => r.vencimiento && r.vencimiento >= now).sort((a, b) => a.vencimiento - b.vencimiento).slice(0, 6);
+      _tipoNorm: getDapType(r),
+    })).filter(r => r.vencimiento && r.vencimiento >= now).sort((a, b) => a.vencimiento - b.vencimiento).slice(0, 10);
 
     // FINANZAS — Fondos Mutuos
     const fondosRows = (data.finFondos || []).filter(r => r.Fondo || r.fondo);
@@ -383,7 +403,9 @@ export default function App() {
     }));
     const totalFondos = fondosSaldos.reduce((s, r) => s + r.actual, 0);
 
-    // Total inversiones
+    // Inversión real = DAP Inversión + Fondos Mutuos (NO incluye trabajo ni crédito)
+    const totalInversionReal = totalDAPInversion + totalFondos;
+    // Total en DAPs (todos los tipos)
     const totalInversiones = totalDAP + totalFondos;
 
     // FINANZAS — Calendario compromisos
@@ -457,6 +479,9 @@ export default function App() {
       viajesMesActual: viajesMesActual.length, viajesMesAnteriorCount: viajesMesAnterior.length,
       viajesCorteActual, viajesCorteAnterior, viajesPorMes, topClientesViajes, viajesPorEquipo, dayOfMonth,
       totalCaja, saldosBancos, totalDAP, gananciaDAP, dapProximos, totalFondos, fondosSaldos, totalInversiones,
+      totalDAPTrabajo, totalDAPInversion, totalDAPCredito,
+      gananciaDAPTrabajo, gananciaDAPInversion, gananciaDAPCredito,
+      totalInversionReal,
       totalCompromisosProx, compromisosProx, totalCompromisosMes, totalGuardadoMes, compromisosMes,
       alertas, kmMesActual, tractosActivos,
       curMonth, curYear,
@@ -639,8 +664,8 @@ function HomeView({ C, T, setTab }) {
         <KpiCard icon={Calendar} label="Pagos próx. 7 días" value={fmtM(C.totalCompromisosProx)} T={T}
           sub={C.compromisosProx?.length + " compromisos"}
           color={T.amber} colorBg={T.amberBg} />
-        <KpiCard icon={PiggyBank} label="Inversiones" value={fmtM(C.totalInversiones)} T={T}
-          sub={`DAP ${fmtM(C.totalDAP)} + FF.MM. ${fmtM(C.totalFondos)}`}
+        <KpiCard icon={PiggyBank} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T}
+          sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`}
           color={T.purple} colorBg={T.purpleBg} />
       </div>
 
@@ -882,20 +907,61 @@ function OperacionesView({ C, T }) {
 // FINANZAS VIEW
 // ═══════════════════════════════════════════════════════════════
 function FinanzasView({ C, T }) {
+  const DapBadge = ({ label, color, bg }) => (
+    <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: bg, color, letterSpacing: 0.3 }}>{label}</span>
+  );
+  const tipoLabel = { trabajo: "Trabajo", inversion: "Inversión", credito: "Crédito" };
+  const tipoColor = { trabajo: T.accent, inversion: T.green, credito: T.amber };
+  const tipoBg = { trabajo: T.accentBg, inversion: T.greenBg, credito: T.amberBg };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <h2 style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>Finanzas</h2>
 
+      {/* KPIs principales */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} color={T.teal} colorBg={T.tealBg} />
-        <KpiCard icon={PiggyBank} label="DAPs vigentes" value={fmtM(C.totalDAP)} T={T}
-          sub={`Ganancia: ${fmtM(C.gananciaDAP)}`} color={T.green} colorBg={T.greenBg} />
-        <KpiCard icon={TrendingUp} label="Fondos mutuos" value={fmtM(C.totalFondos)} T={T} color={T.purple} colorBg={T.purpleBg} />
+        <KpiCard icon={Target} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T}
+          sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`}
+          color={T.green} colorBg={T.greenBg} />
         <KpiCard icon={Calendar} label="Compromisos mes" value={fmtM(C.totalCompromisosMes)} T={T}
           sub={`Guardado: ${fmtM(C.totalGuardadoMes)}`} color={T.amber} colorBg={T.amberBg} />
       </div>
 
+      {/* Desglose DAP por tipo */}
+      <SectionCard title="Depósitos a plazo — desglose por tipo" icon={PiggyBank} T={T} color={T.purple}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+          <div style={{ flex: "1 1 150px", background: T.accentBg, borderRadius: 10, padding: "12px 16px", border: `1px solid ${T.accent}22` }}>
+            <div style={{ fontSize: 10, color: T.accent, fontWeight: 600, marginBottom: 4 }}>DAP TRABAJO</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>{fmtM(C.totalDAPTrabajo)}</div>
+            <div style={{ fontSize: 11, color: T.txM, marginTop: 2 }}>Ganancia: {fmtM(C.gananciaDAPTrabajo)}</div>
+            <div style={{ fontSize: 10, color: T.txD, marginTop: 4 }}>Capital de trabajo rotativo</div>
+          </div>
+          <div style={{ flex: "1 1 150px", background: T.greenBg, borderRadius: 10, padding: "12px 16px", border: `1px solid ${T.green}22` }}>
+            <div style={{ fontSize: 10, color: T.green, fontWeight: 600, marginBottom: 4 }}>DAP INVERSIÓN</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>{fmtM(C.totalDAPInversion)}</div>
+            <div style={{ fontSize: 11, color: T.txM, marginTop: 2 }}>Ganancia: {fmtM(C.gananciaDAPInversion)}</div>
+            <div style={{ fontSize: 10, color: T.txD, marginTop: 4 }}>Inversión a mayor plazo</div>
+          </div>
+          <div style={{ flex: "1 1 150px", background: T.amberBg, borderRadius: 10, padding: "12px 16px", border: `1px solid ${T.amber}22` }}>
+            <div style={{ fontSize: 10, color: T.amber, fontWeight: 600, marginBottom: 4 }}>DAP CRÉDITO</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>{fmtM(C.totalDAPCredito)}</div>
+            <div style={{ fontSize: 11, color: T.txM, marginTop: 2 }}>Ganancia: {fmtM(C.gananciaDAPCredito)}</div>
+            <div style={{ fontSize: 10, color: T.txD, marginTop: 4 }}>Reserva cuotas crédito Itaú</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderTop: `1px solid ${T.border}` }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.tx }}>Total DAPs vigentes</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.tx }}>{fmtM(C.totalDAP)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+          <span style={{ fontSize: 12, color: T.txM }}>Ganancia total DAPs</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: T.green }}>{fmtM(C.gananciaDAP)}</span>
+        </div>
+      </SectionCard>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+        {/* Saldos bancarios */}
         <SectionCard title="Saldos bancarios" icon={Building2} T={T} color={T.teal}>
           <MiniTable T={T}
             headers={["Banco", "Saldo"]}
@@ -905,24 +971,53 @@ function FinanzasView({ C, T }) {
             ]} />
         </SectionCard>
 
-        <SectionCard title="DAPs vigentes — próximos vencimientos" icon={PiggyBank} T={T} color={T.green}>
-          <MiniTable T={T}
-            headers={["Banco", "Tipo", "Monto", "Final", "Vence", "Tasa"]}
-            rows={(C.dapProximos || []).map(r => [
-              r.banco, r.tipo || "-", fmtM(r.monto), fmtM(r.montoFinal),
-              r.vencimiento?.toLocaleDateString("es-CL", { day: "2-digit", month: "short" }),
-              r.tasa || "",
-            ])} />
-        </SectionCard>
-
+        {/* Fondos Mutuos */}
         <SectionCard title="Fondos mutuos" icon={TrendingUp} T={T} color={T.purple}>
           <MiniTable T={T}
             headers={["Fondo", "Admin.", "Invertido", "Actual", "Rent. %"]}
             rows={(C.fondosSaldos || []).map(r => [
               r.fondo, r.admin, fmtM(r.invertido), fmtM(r.actual), r.rentPct,
             ])} />
+          {C.totalFondos > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 0", borderTop: `1px solid ${T.border}`, marginTop: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>Total FF.MM.</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.tx }}>{fmtM(C.totalFondos)}</span>
+            </div>
+          )}
         </SectionCard>
 
+        {/* Resumen inversión real */}
+        <SectionCard title="Inversión real (no incluye trabajo ni crédito)" icon={Target} T={T} color={T.green}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, color: T.txM }}>DAP Inversión</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{fmtM(C.totalDAPInversion)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, color: T.txM }}>Fondos Mutuos</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: T.tx }}>{fmtM(C.totalFondos)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: T.green }}>Total inversión real</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: T.green }}>{fmtM(C.totalInversionReal)}</span>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* DAPs próximos vencimientos */}
+        <SectionCard title="DAPs — próximos vencimientos" icon={PiggyBank} T={T} color={T.accent}>
+          <MiniTable T={T}
+            headers={["Banco", "Tipo", "Monto", "Final", "Vence", "Tasa"]}
+            rows={(C.dapProximos || []).map(r => [
+              r.banco,
+              <DapBadge key="t" label={tipoLabel[r._tipoNorm] || r.tipo} color={tipoColor[r._tipoNorm] || T.txM} bg={tipoBg[r._tipoNorm] || T.bg3} />,
+              fmtM(r.monto), fmtM(r.montoFinal),
+              r.vencimiento?.toLocaleDateString("es-CL", { day: "2-digit", month: "short" }),
+              r.tasa || "",
+            ])} />
+        </SectionCard>
+
+        {/* Compromisos próximos 7 días */}
         <SectionCard title="Compromisos próximos 7 días" icon={Calendar} T={T} color={T.amber}>
           {C.compromisosProx?.length > 0 ? (
             <MiniTable T={T}
@@ -936,6 +1031,7 @@ function FinanzasView({ C, T }) {
           ) : <p style={{ fontSize: 12, color: T.txM, padding: 8 }}>Sin compromisos pendientes</p>}
         </SectionCard>
 
+        {/* Calendario del mes */}
         <SectionCard title={`Calendario del mes — ${MESES_FULL[C.curMonth]}`} icon={Clock} T={T} color={T.accent}>
           <MiniTable T={T} maxRows={15}
             headers={["Fecha", "Concepto", "Monto", "Estado"]}
