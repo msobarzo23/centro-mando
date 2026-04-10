@@ -24,6 +24,9 @@ const CSV = {
   finFondos: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSlD_sQVnKW53q0m243_Gr0EletIkDxjaN1-mRzdlma7q6WktHBhXYBBunmz5ZyBg/pub?gid=1691837276&single=true&output=csv",
   flotaViajes: "https://docs.google.com/spreadsheets/d/e/2PACX-1vQoXDMe1856GFyKLBBXGcgeUnkqttWGvFXbbeKDwGWoNDuBd0Tn9VJLDfRSezlD8zHi8Q_E6RlciYlT/pub?gid=0&single=true&output=csv",
   flotaEquipos: "https://docs.google.com/spreadsheets/d/e/2PACX-1vQoXDMe1856GFyKLBBXGcgeUnkqttWGvFXbbeKDwGWoNDuBd0Tn9VJLDfRSezlD8zHi8Q_E6RlciYlT/pub?gid=923646374&single=true&output=csv",
+  leasingDetalle: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSlD_sQVnKW53q0m243_Gr0EletIkDxjaN1-mRzdlma7q6WktHBhXYBBunmz5ZyBg/pub?gid=675670021&single=true&output=csv",
+  leasingResumen: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSlD_sQVnKW53q0m243_Gr0EletIkDxjaN1-mRzdlma7q6WktHBhXYBBunmz5ZyBg/pub?gid=771027573&single=true&output=csv",
+  credito: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSlD_sQVnKW53q0m243_Gr0EletIkDxjaN1-mRzdlma7q6WktHBhXYBBunmz5ZyBg/pub?gid=1158539978&single=true&output=csv",
 };
 
 const AUTO_REFRESH_MIN = 15;
@@ -220,6 +223,8 @@ const TABS = [
   { id: "ventas", label: "Ventas", icon: DollarSign },
   { id: "operaciones", label: "Operaciones", icon: Truck },
   { id: "finanzas", label: "Finanzas", icon: Banknote },
+  { id: "leasing", label: "Leasing", icon: Truck },
+  { id: "credito", label: "Crédito", icon: CreditCard },
   { id: "alertas", label: "Alertas", icon: AlertTriangle },
 ];
 
@@ -247,14 +252,17 @@ export default function App() {
       const [ventas, viajes, flotaViajes, flotaEquipos] = await Promise.all([
         fetchCSV(CSV.ventas), fetchCSV(CSV.viajes), fetchCSV(CSV.flotaViajes), fetchCSV(CSV.flotaEquipos),
       ]);
-      const [finResumen, finBancos, finDAP, finCalendario, finFondos] = await Promise.all([
+      const [finResumen, finBancos, finDAP, finCalendario, finFondos, leasingDetalle, leasingResumen, credito] = await Promise.all([
         fetchFinCSV(CSV.finResumen, ["Concepto", "Monto", "Ganancia", "Mes", "Comprometido", "Guardado"]),
         fetchFinCSV(CSV.finBancos, ["Fecha", "Banco", "Saldo Inicial", "Saldo Final", "Monto"]),
         fetchFinCSV(CSV.finDAP, ["Fecha Inicio", "Vencimiento", "Tasa", "Monto Inicial", "Monto Final", "Ganancia", "Vigente"]),
         fetchFinCSV(CSV.finCalendario, ["Fecha", "Monto", "Guardado", "Falta", "Concepto", "Estado"]),
         fetchFinCSV(CSV.finFondos, ["Empresa", "Fondo", "Administradora", "Monto Invertido", "Valor Actual", "Rentabilidad"]),
+        fetchFinCSV(CSV.leasingDetalle, ["ID", "Banco", "Emisor", "Tractos", "Cuota UF", "Dia Vcto", "Fecha Inicio", "Fecha Fin", "Estado"]),
+        fetchFinCSV(CSV.leasingResumen, ["Emisor", "Contratos", "Tractos", "Cuota Mensual", "Deuda Pendiente", "Mes", "Anio", "Cuota UF", "Cuota CLP"]),
+        fetchCSV(CSV.credito),
       ]);
-      setData({ ventas, viajes, finResumen, finBancos, finDAP, finCalendario, finFondos, flotaViajes, flotaEquipos });
+      setData({ ventas, viajes, finResumen, finBancos, finDAP, finCalendario, finFondos, flotaViajes, flotaEquipos, leasingDetalle, leasingResumen, credito });
       setLastUpdate(new Date());
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -474,6 +482,128 @@ export default function App() {
     const kmMesActual = flotaMesActual.reduce((s, r) => s + r._km, 0);
     const tractosActivos = new Set(flotaMesActual.map(r => r._tracto).filter(Boolean)).size;
 
+    // LEASING
+    const leasingDet = (data.leasingDetalle || []).filter(r => {
+      const estado = (r.Estado || r.estado || "").toUpperCase();
+      return estado === "ACTIVO";
+    });
+    const leasingContratosActivos = leasingDet.length;
+    const leasingTractosTotal = leasingDet.reduce((s, r) => s + parseNum(r["N Tractos"] || r.Tractos || r.tractos), 0);
+
+    // Leasing resumen por emisor (from resumen sheet section 1)
+    const leasingRes = (data.leasingResumen || []);
+    // Find emisor summary rows (have "Contratos" or "Contratos\nActivos" column with a number)
+    const leasingEmisores = leasingRes.filter(r => {
+      const emisor = r.Emisor || r.emisor || "";
+      const contratos = r["Contratos\nActivos"] || r["Contratos Activos"] || r.Contratos || "";
+      return emisor && !emisor.includes("TOTAL") && !emisor.includes("PROXIMA") && !emisor.includes("PROYECCION") && parseNum(contratos) > 0;
+    }).map(r => ({
+      emisor: r.Emisor || r.emisor,
+      contratos: parseNum(r["Contratos\nActivos"] || r["Contratos Activos"] || r.Contratos),
+      tractos: parseNum(r["N Tractos\nActivos"] || r["N Tractos Activos"] || r.Tractos),
+      cuotaUF: parseNum(r["Cuota Mensual\nUF Total"] || r["Cuota Mensual UF Total"] || r["Cuota UF"]),
+      cuotaCLP: parseNum(r["Cuota Mensual\nCLP s/IVA"] || r["Cuota Mensual CLP s/IVA"]),
+      cuotaIVA: parseNum(r["Cuota Mensual\nCLP c/IVA"] || r["Cuota Mensual CLP c/IVA"]),
+      deudaUF: parseNum(r["Deuda Pendiente\nUF"] || r["Deuda Pendiente UF"]),
+      deudaCLP: parseNum(r["Deuda Pendiente\nCLP"] || r["Deuda Pendiente CLP"]),
+    }));
+
+    // Total row
+    const leasingTotalRow = leasingRes.find(r => (r.Emisor || "").includes("TOTAL"));
+    const leasingTotalCuotaIVA = leasingTotalRow ? parseNum(leasingTotalRow["Cuota Mensual\nCLP c/IVA"] || leasingTotalRow["Cuota Mensual CLP c/IVA"]) : leasingEmisores.reduce((s, e) => s + e.cuotaIVA, 0);
+    const leasingTotalCuotaSinIVA = leasingTotalRow ? parseNum(leasingTotalRow["Cuota Mensual\nCLP s/IVA"] || leasingTotalRow["Cuota Mensual CLP s/IVA"]) : leasingEmisores.reduce((s, e) => s + e.cuotaCLP, 0);
+    const leasingDeudaTotal = leasingTotalRow ? parseNum(leasingTotalRow["Deuda Pendiente\nCLP"] || leasingTotalRow["Deuda Pendiente CLP"]) : leasingEmisores.reduce((s, e) => s + e.deudaCLP, 0);
+    const leasingTotalUF = leasingTotalRow ? parseNum(leasingTotalRow["Cuota Mensual\nUF Total"] || leasingTotalRow["Cuota Mensual UF Total"]) : 0;
+
+    // Próximas cuotas leasing
+    const leasingProxCuotas = leasingRes.filter(r => {
+      const fecha = r["Fecha Vencimiento"] || r.Fecha || "";
+      const dias = r["Dias Restantes"] || r.Dias || "";
+      return fecha && parseNum(dias) >= 0 && (r.Estado || r.estado || "");
+    }).map(r => ({
+      fecha: r["Fecha Vencimiento"] || r.Fecha,
+      dias: parseNum(r["Dias Restantes"] || r.Dias),
+      cuotaUF: parseNum(r["Cuota UF Total"] || r["Cuota UF"]),
+      cuotaCLP: parseNum(r["Cuota CLP s/IVA"] || r["Cuota CLP"]),
+      cuotaIVA: parseNum(r["Cuota CLP c/IVA"]),
+      bancos: r["Bancos que cobran"] || r.Bancos || "",
+      estado: r.Estado || r.estado || "",
+    }));
+
+    // Proyección mensual leasing
+    const leasingProyeccion = leasingRes.filter(r => {
+      const mes = r.Mes || r.mes || "";
+      const anio = r.Anio || r.anio || "";
+      return mes && anio && parseNum(anio) >= curYear;
+    }).map(r => ({
+      mes: r.Mes || r.mes,
+      anio: parseNum(r.Anio || r.anio),
+      cuotaUF: parseNum(r["Cuota UF\nTotal Mes\n(dia5+dia15)"] || r["Cuota UF Total Mes (dia5+dia15)"] || r["Cuota UF"]),
+      cuotaCLP: parseNum(r["Cuota CLP\ns/IVA"] || r["Cuota CLP s/IVA"]),
+      cuotaIVA: parseNum(r["Cuota CLP\nc/IVA"] || r["Cuota CLP c/IVA"]),
+      contratos: parseNum(r["Contratos\nActivos"] || r["Contratos Activos"]),
+      vence: r["Vence este mes"] || "",
+      deltaUF: parseNum(r["Delta UF\nvs mes ant."] || r["Delta UF vs mes ant."]),
+      ahorroUF: parseNum(r["Ahorro UF/mes"] || r["Ahorro UF"]),
+      nota: r.Nota || r.nota || "",
+    }));
+
+    // Cuotas día 5 y día 15 (from detalle)
+    const dia5 = leasingDet.filter(r => parseNum(r["Dia Vcto"] || r.DiaVcto) === 5);
+    const dia15 = leasingDet.filter(r => parseNum(r["Dia Vcto"] || r.DiaVcto) === 15);
+    const cuotaDia5UF = dia5.reduce((s, r) => s + parseNum(r["Cuota UF\nTotal Grupo"] || r["Cuota UF Total Grupo"]), 0);
+    const cuotaDia15UF = dia15.reduce((s, r) => s + parseNum(r["Cuota UF\nTotal Grupo"] || r["Cuota UF Total Grupo"]), 0);
+
+    // CRÉDITO COMERCIAL
+    const creditoRows = (data.credito || []).map(r => ({
+      cuota: parseNum(r["N° Cuota"] || r.Cuota || r.cuota),
+      fecha: r["Fecha Vencimiento"] || r.Fecha || r.fecha || "",
+      capital: parseNum(r["Amortización Capital"] || r["Amortizacion Capital"] || r.capital),
+      interes: parseNum(r["Monto Interés"] || r["Monto Interes"] || r.interes),
+      valorCuota: parseNum(r["Valor Cuota"] || r.ValorCuota || r.valor_cuota),
+      saldo: parseNum(r["Saldo Insoluto"] || r.SaldoInsoluto || r.saldo),
+    })).filter(r => r.cuota > 0);
+
+    const creditoSaldoActual = creditoRows.length > 0 ? creditoRows[0].saldo : 0;
+    const creditoValorCuota = creditoRows.find(r => r.valorCuota > 0)?.valorCuota || 0;
+    const creditoTotalCuotas = creditoRows.length;
+
+    // Find next cuota to pay (fecha >= today)
+    const todayStr = `${curYear}-${String(curMonth + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const creditoProxima = creditoRows.find(r => {
+      const fd = parseDate(r.fecha);
+      return fd && fd >= now && r.valorCuota > 0;
+    });
+    const creditoCuotasPagadas = creditoRows.filter(r => {
+      const fd = parseDate(r.fecha);
+      return fd && fd < now;
+    }).length;
+    const creditoCuotasPorPagar = creditoTotalCuotas - creditoCuotasPagadas;
+    const creditoTotalIntereses = creditoRows.reduce((s, r) => s + r.interes, 0);
+    const creditoTotalCapital = creditoRows.reduce((s, r) => s + r.capital, 0);
+
+    // Leasing alert: próxima cuota urgente
+    leasingProxCuotas.filter(r => r.dias <= 5 && r.dias >= 0).forEach(r => {
+      alertas.push({
+        type: "warning", icon: Truck,
+        msg: `Leasing: cuota de ${fmtM(r.cuotaIVA)} c/IVA vence en ${r.dias} días (${r.bancos})`,
+      });
+    });
+
+    // Crédito alert
+    if (creditoProxima) {
+      const fd = parseDate(creditoProxima.fecha);
+      if (fd) {
+        const diasCredito = Math.ceil((fd - now) / 86400000);
+        if (diasCredito <= 7 && diasCredito >= 0) {
+          alertas.push({
+            type: "info", icon: CreditCard,
+            msg: `Crédito Itaú: cuota #${creditoProxima.cuota} de ${fmtM(creditoProxima.valorCuota)} vence en ${diasCredito} días`,
+          });
+        }
+      }
+    }
+
     return {
       totalMesActual, totalMesAnterior, ventasPorMes, topClientes, ventasAnoActual, ventasAnoAnterior, ventasRows,
       viajesMesActual: viajesMesActual.length, viajesMesAnteriorCount: viajesMesAnterior.length,
@@ -484,6 +614,15 @@ export default function App() {
       totalInversionReal,
       totalCompromisosProx, compromisosProx, totalCompromisosMes, totalGuardadoMes, compromisosMes,
       alertas, kmMesActual, tractosActivos,
+      // Leasing
+      leasingContratosActivos, leasingTractosTotal, leasingEmisores,
+      leasingTotalCuotaIVA, leasingTotalCuotaSinIVA, leasingDeudaTotal, leasingTotalUF,
+      leasingProxCuotas, leasingProyeccion, cuotaDia5UF, cuotaDia15UF,
+      leasingDet,
+      // Crédito
+      creditoRows, creditoSaldoActual, creditoValorCuota, creditoTotalCuotas,
+      creditoProxima, creditoCuotasPagadas, creditoCuotasPorPagar,
+      creditoTotalIntereses, creditoTotalCapital,
       curMonth, curYear,
     };
   }, [data]);
@@ -592,6 +731,8 @@ export default function App() {
           {tab === "ventas" && <VentasView C={C} T={T} />}
           {tab === "operaciones" && <OperacionesView C={C} T={T} />}
           {tab === "finanzas" && <FinanzasView C={C} T={T} />}
+          {tab === "leasing" && <LeasingView C={C} T={T} />}
+          {tab === "credito" && <CreditoView C={C} T={T} />}
           {tab === "alertas" && <AlertasView C={C} T={T} />}
         </main>
       </div>
@@ -667,6 +808,19 @@ function HomeView({ C, T, setTab }) {
         <KpiCard icon={PiggyBank} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T}
           sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`}
           color={T.purple} colorBg={T.purpleBg} />
+      </div>
+
+      {/* Deuda: Leasing + Crédito */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA) + " c/IVA"} T={T}
+          sub={`${C.leasingContratosActivos} contratos · ${C.leasingTractosTotal} tractos`}
+          color={T.red} colorBg={T.redBg} />
+        <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoSaldoActual)} T={T}
+          sub={C.creditoProxima ? `Próxima: ${fmtM(C.creditoProxima.valorCuota)} · cuota #${C.creditoProxima.cuota}` : "En gracia"}
+          color={T.red} colorBg={T.redBg} />
+        <KpiCard icon={TrendingDown} label="Deuda total" value={fmtM(C.leasingDeudaTotal + C.creditoSaldoActual)} T={T}
+          sub={`Leasing ${fmtM(C.leasingDeudaTotal)} + Crédito ${fmtM(C.creditoSaldoActual)}`}
+          color={T.red} colorBg={T.redBg} />
       </div>
 
       {/* Alertas rápidas */}
@@ -1041,6 +1195,218 @@ function FinanzasView({ C, T }) {
               fmtM(r.monto),
               r.estado || "-",
             ])} />
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LEASING VIEW
+// ═══════════════════════════════════════════════════════════════
+function LeasingView({ C, T }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>Leasing</h2>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <KpiCard icon={Truck} label="Contratos activos" value={String(C.leasingContratosActivos)} T={T}
+          sub={`${C.leasingTractosTotal} tractos en total`} color={T.accent} colorBg={T.accentBg} />
+        <KpiCard icon={DollarSign} label="Cuota mensual s/IVA" value={fmtM(C.leasingTotalCuotaSinIVA)} T={T}
+          sub={`${(C.leasingTotalUF || 0).toLocaleString("es-CL", {maximumFractionDigits:0})} UF`}
+          color={T.amber} colorBg={T.amberBg} />
+        <KpiCard icon={DollarSign} label="Cuota mensual c/IVA" value={fmtM(C.leasingTotalCuotaIVA)} T={T}
+          color={T.red} colorBg={T.redBg} />
+        <KpiCard icon={Banknote} label="Deuda pendiente" value={fmtM(C.leasingDeudaTotal)} T={T}
+          color={T.red} colorBg={T.redBg} />
+      </div>
+
+      {/* Cuotas día 5 vs día 15 */}
+      <SectionCard title="Distribución de cuotas por día de pago" icon={Calendar} T={T} color={T.accent}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 150px", background: T.accentBg, borderRadius: 10, padding: "12px 16px", border: `1px solid ${T.accent}22` }}>
+            <div style={{ fontSize: 10, color: T.accent, fontWeight: 600, marginBottom: 4 }}>DÍA 5</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>{(C.cuotaDia5UF || 0).toLocaleString("es-CL", {maximumFractionDigits:0})} UF</div>
+            <div style={{ fontSize: 11, color: T.txM, marginTop: 2 }}>{C.leasingDet?.filter(r => parseNum(r["Dia Vcto"] || r.DiaVcto) === 5).length || 0} contratos</div>
+          </div>
+          <div style={{ flex: "1 1 150px", background: T.amberBg, borderRadius: 10, padding: "12px 16px", border: `1px solid ${T.amber}22` }}>
+            <div style={{ fontSize: 10, color: T.amber, fontWeight: 600, marginBottom: 4 }}>DÍA 15</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>{(C.cuotaDia15UF || 0).toLocaleString("es-CL", {maximumFractionDigits:0})} UF</div>
+            <div style={{ fontSize: 11, color: T.txM, marginTop: 2 }}>{C.leasingDet?.filter(r => parseNum(r["Dia Vcto"] || r.DiaVcto) === 15).length || 0} contratos</div>
+          </div>
+          <div style={{ flex: "1 1 150px", background: T.redBg, borderRadius: 10, padding: "12px 16px", border: `1px solid ${T.red}22` }}>
+            <div style={{ fontSize: 10, color: T.red, fontWeight: 600, marginBottom: 4 }}>TOTAL MENSUAL</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>{(C.leasingTotalUF || 0).toLocaleString("es-CL", {maximumFractionDigits:0})} UF</div>
+            <div style={{ fontSize: 11, color: T.txM, marginTop: 2 }}>c/IVA: {fmtM(C.leasingTotalCuotaIVA)}</div>
+          </div>
+        </div>
+      </SectionCard>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+        {/* Resumen por emisor */}
+        <SectionCard title="Cartera por emisor" icon={Building2} T={T} color={T.accent}>
+          <MiniTable T={T}
+            headers={["Emisor", "Contratos", "Tractos", "Cuota c/IVA", "Deuda"]}
+            rows={[
+              ...(C.leasingEmisores || []).map(e => [
+                e.emisor, e.contratos, e.tractos, fmtM(e.cuotaIVA), fmtM(e.deudaCLP),
+              ]),
+              ["TOTAL", C.leasingContratosActivos, C.leasingTractosTotal, fmtM(C.leasingTotalCuotaIVA), fmtM(C.leasingDeudaTotal)],
+            ]} />
+        </SectionCard>
+
+        {/* Próximas cuotas */}
+        <SectionCard title="Próximas cuotas a pagar" icon={Clock} T={T} color={T.amber}>
+          {C.leasingProxCuotas?.length > 0 ? (
+            <MiniTable T={T}
+              headers={["Fecha", "Días", "CLP c/IVA", "Bancos", "Estado"]}
+              rows={C.leasingProxCuotas.map(r => [
+                r.fecha,
+                r.dias,
+                fmtM(r.cuotaIVA),
+                r.bancos,
+                <span key="e" style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 4,
+                  background: r.estado === "URGENTE" ? T.redBg : T.greenBg,
+                  color: r.estado === "URGENTE" ? T.red : T.green,
+                }}>{r.estado}</span>,
+              ])} />
+          ) : <p style={{ fontSize: 12, color: T.txM, padding: 8 }}>Sin cuotas próximas cargadas</p>}
+        </SectionCard>
+      </div>
+
+      {/* Proyección mensual */}
+      <SectionCard title="Proyección mensual — cuándo baja la cuota" icon={TrendingDown} T={T} color={T.green}>
+        {C.leasingProyeccion?.length > 0 ? (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr>{["Mes", "Año", "Cuota UF", "CLP s/IVA", "CLP c/IVA", "Contratos", "Vence", "Ahorro UF"].map((h, i) => (
+                  <th key={i} style={{ padding: "8px 10px", textAlign: i === 0 ? "left" : "right", color: T.txM, fontWeight: 600, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", fontSize: 11 }}>{h}</th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {C.leasingProyeccion.map((r, ri) => {
+                  const hasVence = r.vence && r.vence.length > 0;
+                  const hasAhorro = r.ahorroUF > 0;
+                  return (
+                    <tr key={ri} style={{ borderBottom: `1px solid ${T.border}22`, background: hasVence ? T.greenBg : "transparent" }}>
+                      <td style={{ padding: "7px 10px", color: T.tx, fontWeight: hasVence ? 600 : 400 }}>{r.mes}</td>
+                      <td style={{ padding: "7px 10px", textAlign: "right", color: T.txM }}>{r.anio}</td>
+                      <td style={{ padding: "7px 10px", textAlign: "right", color: T.tx, fontFamily: "monospace" }}>{r.cuotaUF?.toLocaleString("es-CL", {maximumFractionDigits:0})}</td>
+                      <td style={{ padding: "7px 10px", textAlign: "right", color: T.tx }}>{fmtM(r.cuotaCLP)}</td>
+                      <td style={{ padding: "7px 10px", textAlign: "right", color: T.tx, fontWeight: 500 }}>{fmtM(r.cuotaIVA)}</td>
+                      <td style={{ padding: "7px 10px", textAlign: "right", color: T.txM }}>{r.contratos}</td>
+                      <td style={{ padding: "7px 10px", textAlign: "right", color: hasVence ? T.green : T.txD, fontWeight: hasVence ? 600 : 400, fontSize: 11 }}>{r.vence || "—"}</td>
+                      <td style={{ padding: "7px 10px", textAlign: "right", color: hasAhorro ? T.green : T.txD, fontWeight: hasAhorro ? 600 : 400 }}>{hasAhorro ? `${r.ahorroUF.toLocaleString("es-CL", {maximumFractionDigits:0})} UF` : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : <p style={{ fontSize: 12, color: T.txM, padding: 8 }}>Sin proyección disponible</p>}
+      </SectionCard>
+
+      {/* Detalle contratos */}
+      <SectionCard title="Detalle de contratos activos" icon={Truck} T={T}>
+        <MiniTable T={T} maxRows={15}
+          headers={["ID", "Banco", "Tractos", "Cuota UF", "Día", "Inicio", "Vence", "Pagadas", "Restantes"]}
+          rows={(C.leasingDet || []).map(r => [
+            r.ID || r.id,
+            r["Banco / Emisor"] || r.Banco || r.banco,
+            r["N Tractos"] || r.Tractos,
+            r["Cuota UF\nTotal Grupo"] || r["Cuota UF Total Grupo"] || "",
+            r["Dia Vcto"] || r.DiaVcto,
+            r["Fecha Inicio"] || r.FechaInicio || "",
+            r["Fecha Fin\n(Vencimiento)"] || r["Fecha Fin (Vencimiento)"] || r["Fecha Fin"] || "",
+            r["Cuotas\nPagadas"] || r["Cuotas Pagadas"] || "",
+            r["Cuotas Por\nPagar"] || r["Cuotas Por Pagar"] || "",
+          ])} />
+      </SectionCard>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CRÉDITO VIEW
+// ═══════════════════════════════════════════════════════════════
+function CreditoView({ C, T }) {
+  const proxFecha = C.creditoProxima ? parseDate(C.creditoProxima.fecha) : null;
+  const proxLabel = proxFecha ? proxFecha.toLocaleDateString("es-CL", { day: "2-digit", month: "long", year: "numeric" }) : "—";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>Crédito comercial — Banco Itaú</h2>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <KpiCard icon={Banknote} label="Saldo insoluto" value={fmtM(C.creditoSaldoActual)} T={T}
+          color={T.red} colorBg={T.redBg} />
+        <KpiCard icon={DollarSign} label="Cuota mensual" value={fmtM(C.creditoValorCuota)} T={T}
+          sub={`${C.creditoTotalCuotas} cuotas totales`}
+          color={T.amber} colorBg={T.amberBg} />
+        <KpiCard icon={Calendar} label="Próximo pago" value={proxLabel} T={T}
+          sub={C.creditoProxima ? `Cuota #${C.creditoProxima.cuota} · Capital ${fmtM(C.creditoProxima.capital)} + Interés ${fmtM(C.creditoProxima.interes)}` : "En período de gracia"}
+          color={T.accent} colorBg={T.accentBg} />
+        <KpiCard icon={Target} label="Avance" value={`${C.creditoCuotasPagadas}/${C.creditoTotalCuotas}`} T={T}
+          sub={`${C.creditoCuotasPorPagar} cuotas restantes`}
+          color={T.green} colorBg={T.greenBg} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+        {/* Resumen del crédito */}
+        <SectionCard title="Resumen del crédito" icon={CreditCard} T={T} color={T.accent}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {[
+              ["Monto original", fmtFull(5000000000)],
+              ["Plazo", "60 cuotas (58 meses + 2 gracia)"],
+              ["Cuota mensual", fmtFull(C.creditoValorCuota)],
+              ["Cuotas pagadas", String(C.creditoCuotasPagadas)],
+              ["Cuotas restantes", String(C.creditoCuotasPorPagar)],
+              ["Saldo insoluto", fmtFull(C.creditoSaldoActual)],
+              ["Total capital a pagar", fmtM(C.creditoTotalCapital)],
+              ["Total intereses", fmtM(C.creditoTotalIntereses)],
+            ].map(([label, val], i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: i < 7 ? `1px solid ${T.border}22` : "none" }}>
+                <span style={{ fontSize: 12, color: T.txM }}>{label}</span>
+                <span style={{ fontSize: 12, fontWeight: 500, color: T.tx }}>{val}</span>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+
+        {/* Próximas 6 cuotas */}
+        <SectionCard title="Próximas cuotas" icon={Clock} T={T} color={T.amber}>
+          <MiniTable T={T} maxRows={6}
+            headers={["#", "Fecha", "Capital", "Interés", "Cuota", "Saldo"]}
+            rows={(C.creditoRows || []).filter(r => {
+              const fd = parseDate(r.fecha);
+              return fd && fd >= new Date() && r.valorCuota > 0;
+            }).slice(0, 6).map(r => [
+              r.cuota,
+              r.fecha,
+              fmtM(r.capital),
+              fmtM(r.interes),
+              fmtM(r.valorCuota),
+              fmtM(r.saldo),
+            ])} />
+        </SectionCard>
+
+        {/* Evolución del saldo */}
+        <SectionCard title="Evolución del saldo" icon={TrendingDown} T={T} color={T.green}>
+          {C.creditoRows?.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={(C.creditoRows || []).filter(r => r.saldo > 0).map(r => ({
+                cuota: `#${r.cuota}`,
+                saldo: r.saldo,
+              }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+                <XAxis dataKey="cuota" tick={{ fill: T.txM, fontSize: 9 }} axisLine={false} tickLine={false} interval={9} />
+                <YAxis tick={{ fill: T.txM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => fmtM(v)} width={55} />
+                <Tooltip content={<ChartTooltip T={T} />} />
+                <Area type="monotone" dataKey="saldo" stroke={T.red} fill={T.redBg} name="Saldo" />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : <p style={{ fontSize: 12, color: T.txM }}>Sin datos</p>}
         </SectionCard>
       </div>
     </div>
