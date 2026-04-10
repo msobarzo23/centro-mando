@@ -41,12 +41,22 @@ const parseNum = (v) => {
   let s = String(v).trim().replace(/\$/g, "").replace(/%/g, "");
   const dots = (s.match(/\./g) || []).length;
   const commas = (s.match(/,/g) || []).length;
-  if (dots > 1) s = s.replace(/\./g, "");
-  else if (dots === 1 && commas === 0) {
+  // Chilean format: dots as thousands, comma as decimal (e.g. 7.612,92 or 303.311.827)
+  if (commas === 1 && dots >= 1) {
+    // e.g. "7.612,92" or "39.841,72" → remove dots (thousands), replace comma with dot (decimal)
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (commas === 0 && dots > 1) {
+    // e.g. "303.311.827" → remove dots (all thousands separators)
+    s = s.replace(/\./g, "");
+  } else if (commas === 0 && dots === 1) {
+    // Could be "1.500" (thousands) or "0.95" (decimal)
     const afterDot = s.split(".")[1];
-    if (afterDot && afterDot.length === 3) s = s.replace(".", "");
+    if (afterDot && afterDot.length === 3) s = s.replace(".", ""); // thousands
+    // else keep as decimal
+  } else if (commas === 1 && dots === 0) {
+    // e.g. "0,95" → comma is decimal
+    s = s.replace(",", ".");
   }
-  s = s.replace(",", ".");
   const n = parseFloat(s);
   return isNaN(n) ? 0 : n;
 };
@@ -121,6 +131,99 @@ const fetchFinCSV = (url, knownHeaders) => new Promise((resolve) => {
     error: () => resolve([]),
   });
 });
+
+// Raw CSV fetcher (returns array of arrays, no header processing)
+const fetchRawCSV = (url) => new Promise((resolve) => {
+  Papa.parse(url, {
+    download: true, header: false, skipEmptyLines: false,
+    complete: (r) => resolve(r.data || []),
+    error: () => resolve([]),
+  });
+});
+
+// Parse leasing resumen sheet into 3 sections: emisores, proxCuotas, proyeccion
+const parseLeasingResumen = (raw) => {
+  const result = { emisores: [], totalRow: null, proxCuotas: [], proyeccion: [], refs: {} };
+  if (!raw || raw.length === 0) return result;
+  
+  // Find section markers
+  let secEmisor = -1, secProxCuotas = -1, secProyeccion = -1, secRefs = -1;
+  for (let i = 0; i < raw.length; i++) {
+    const first = String(raw[i]?.[0] || "").toUpperCase();
+    if (first.includes("RESUMEN POR EMISOR")) secEmisor = i;
+    if (first.includes("PROXIMAS CUOTAS")) secProxCuotas = i;
+    if (first.includes("PROYECCION MENSUAL")) secProyeccion = i;
+    if (first.includes("CELDAS DE REFERENCIA")) secRefs = i;
+  }
+  
+  // Parse emisores section (rows after header until empty or TOTAL)
+  if (secEmisor >= 0) {
+    const hdrRow = secEmisor + 1; // next row is headers
+    for (let i = hdrRow + 1; i < raw.length; i++) {
+      const r = raw[i];
+      if (!r || !r[0] || String(r[0]).trim() === "") break;
+      const emisor = String(r[0]).trim();
+      if (emisor.includes("TOTAL")) {
+        result.totalRow = { emisor, contratos: parseNum(r[1]), tractos: parseNum(r[2]), cuotaUF: parseNum(r[3]), cuotaCLP: parseNum(r[4]), cuotaIVA: parseNum(r[5]), deudaUF: parseNum(r[6]), deudaCLP: parseNum(r[7]) };
+      } else {
+        result.emisores.push({ emisor, contratos: parseNum(r[1]), tractos: parseNum(r[2]), cuotaUF: parseNum(r[3]), cuotaCLP: parseNum(r[4]), cuotaIVA: parseNum(r[5]), deudaUF: parseNum(r[6]), deudaCLP: parseNum(r[7]) });
+      }
+    }
+  }
+  
+  // Parse proximas cuotas section
+  if (secProxCuotas >= 0) {
+    const hdrRow = secProxCuotas + 1;
+    for (let i = hdrRow + 1; i < raw.length; i++) {
+      const r = raw[i];
+      if (!r || !r[0] || String(r[0]).trim() === "") break;
+      result.proxCuotas.push({
+        fecha: String(r[0]).trim(),
+        dias: parseNum(r[1]),
+        cuotaUF: parseNum(r[2]),
+        cuotaCLP: parseNum(r[3]),
+        cuotaIVA: parseNum(r[4]),
+        bancos: String(r[5] || "").trim(),
+        estado: String(r[6] || "").trim(),
+      });
+    }
+  }
+  
+  // Parse proyeccion mensual section
+  if (secProyeccion >= 0) {
+    // Skip the description row, then header row, then data
+    let hdrRow = secProyeccion + 2; // +1 = description, +2 = headers
+    for (let i = hdrRow + 1; i < raw.length; i++) {
+      const r = raw[i];
+      if (!r) continue;
+      const mes = String(r[0] || "").trim();
+      const anio = parseNum(r[1]);
+      if (!mes || anio < 2020) {
+        if (mes === "" && anio === 0) continue; // empty row
+        break; // end of section
+      }
+      result.proyeccion.push({
+        mes, anio, cuotaUF: parseNum(r[2]), cuotaCLP: parseNum(r[3]), cuotaIVA: parseNum(r[4]),
+        bciDia5: parseNum(r[5]), bciDia15: parseNum(r[6]), vfs: parseNum(r[7]), bchile: parseNum(r[8]),
+        contratos: parseNum(r[9]), vence: String(r[10] || "").trim(),
+        deltaUF: parseNum(r[11]), ahorroUF: parseNum(r[12]), nota: String(r[13] || "").trim(),
+      });
+    }
+  }
+  
+  // Parse reference cells
+  if (secRefs >= 0) {
+    for (let i = secRefs + 1; i < raw.length; i++) {
+      const r = raw[i];
+      if (!r || !r[0]) break;
+      const key = String(r[0]).trim();
+      const val = String(r[1] || "").trim();
+      if (key) result.refs[key] = val;
+    }
+  }
+  
+  return result;
+};
 
 // ═══════════════════════════════════════════════════════════════
 // THEME
@@ -252,16 +355,18 @@ export default function App() {
       const [ventas, viajes, flotaViajes, flotaEquipos] = await Promise.all([
         fetchCSV(CSV.ventas), fetchCSV(CSV.viajes), fetchCSV(CSV.flotaViajes), fetchCSV(CSV.flotaEquipos),
       ]);
-      const [finResumen, finBancos, finDAP, finCalendario, finFondos, leasingDetalle, leasingResumen, credito] = await Promise.all([
+      const [finResumen, finBancos, finDAP, finCalendario, finFondos, leasingDetalle, leasingResumenRaw, credito] = await Promise.all([
         fetchFinCSV(CSV.finResumen, ["Concepto", "Monto", "Ganancia", "Mes", "Comprometido", "Guardado"]),
         fetchFinCSV(CSV.finBancos, ["Fecha", "Banco", "Saldo Inicial", "Saldo Final", "Monto"]),
         fetchFinCSV(CSV.finDAP, ["Fecha Inicio", "Vencimiento", "Tasa", "Monto Inicial", "Monto Final", "Ganancia", "Vigente"]),
         fetchFinCSV(CSV.finCalendario, ["Fecha", "Monto", "Guardado", "Falta", "Concepto", "Estado"]),
         fetchFinCSV(CSV.finFondos, ["Empresa", "Fondo", "Administradora", "Monto Invertido", "Valor Actual", "Rentabilidad"]),
         fetchFinCSV(CSV.leasingDetalle, ["ID", "Banco", "Emisor", "Tractos", "Cuota UF", "Dia Vcto", "Fecha Inicio", "Fecha Fin", "Estado"]),
-        fetchFinCSV(CSV.leasingResumen, ["Emisor", "Contratos", "Tractos", "Cuota Mensual", "Deuda Pendiente", "Mes", "Anio", "Cuota UF", "Cuota CLP"]),
+        fetchRawCSV(CSV.leasingResumen),
         fetchCSV(CSV.credito),
       ]);
+      // Parse leasing resumen into 3 sections
+      const leasingResumen = parseLeasingResumen(leasingResumenRaw);
       setData({ ventas, viajes, finResumen, finBancos, finDAP, finCalendario, finFondos, flotaViajes, flotaEquipos, leasingDetalle, leasingResumen, credito });
       setLastUpdate(new Date());
     } catch (e) { console.error(e); }
@@ -490,63 +595,16 @@ export default function App() {
     const leasingContratosActivos = leasingDet.length;
     const leasingTractosTotal = leasingDet.reduce((s, r) => s + parseNum(r["N Tractos"] || r.Tractos || r.tractos), 0);
 
-    // Leasing resumen por emisor (from resumen sheet section 1)
-    const leasingRes = (data.leasingResumen || []);
-    // Find emisor summary rows (have "Contratos" or "Contratos\nActivos" column with a number)
-    const leasingEmisores = leasingRes.filter(r => {
-      const emisor = r.Emisor || r.emisor || "";
-      const contratos = r["Contratos\nActivos"] || r["Contratos Activos"] || r.Contratos || "";
-      return emisor && !emisor.includes("TOTAL") && !emisor.includes("PROXIMA") && !emisor.includes("PROYECCION") && parseNum(contratos) > 0;
-    }).map(r => ({
-      emisor: r.Emisor || r.emisor,
-      contratos: parseNum(r["Contratos\nActivos"] || r["Contratos Activos"] || r.Contratos),
-      tractos: parseNum(r["N Tractos\nActivos"] || r["N Tractos Activos"] || r.Tractos),
-      cuotaUF: parseNum(r["Cuota Mensual\nUF Total"] || r["Cuota Mensual UF Total"] || r["Cuota UF"]),
-      cuotaCLP: parseNum(r["Cuota Mensual\nCLP s/IVA"] || r["Cuota Mensual CLP s/IVA"]),
-      cuotaIVA: parseNum(r["Cuota Mensual\nCLP c/IVA"] || r["Cuota Mensual CLP c/IVA"]),
-      deudaUF: parseNum(r["Deuda Pendiente\nUF"] || r["Deuda Pendiente UF"]),
-      deudaCLP: parseNum(r["Deuda Pendiente\nCLP"] || r["Deuda Pendiente CLP"]),
-    }));
-
-    // Total row
-    const leasingTotalRow = leasingRes.find(r => (r.Emisor || "").includes("TOTAL"));
-    const leasingTotalCuotaIVA = leasingTotalRow ? parseNum(leasingTotalRow["Cuota Mensual\nCLP c/IVA"] || leasingTotalRow["Cuota Mensual CLP c/IVA"]) : leasingEmisores.reduce((s, e) => s + e.cuotaIVA, 0);
-    const leasingTotalCuotaSinIVA = leasingTotalRow ? parseNum(leasingTotalRow["Cuota Mensual\nCLP s/IVA"] || leasingTotalRow["Cuota Mensual CLP s/IVA"]) : leasingEmisores.reduce((s, e) => s + e.cuotaCLP, 0);
-    const leasingDeudaTotal = leasingTotalRow ? parseNum(leasingTotalRow["Deuda Pendiente\nCLP"] || leasingTotalRow["Deuda Pendiente CLP"]) : leasingEmisores.reduce((s, e) => s + e.deudaCLP, 0);
-    const leasingTotalUF = leasingTotalRow ? parseNum(leasingTotalRow["Cuota Mensual\nUF Total"] || leasingTotalRow["Cuota Mensual UF Total"]) : 0;
-
-    // Próximas cuotas leasing
-    const leasingProxCuotas = leasingRes.filter(r => {
-      const fecha = r["Fecha Vencimiento"] || r.Fecha || "";
-      const dias = r["Dias Restantes"] || r.Dias || "";
-      return fecha && parseNum(dias) >= 0 && (r.Estado || r.estado || "");
-    }).map(r => ({
-      fecha: r["Fecha Vencimiento"] || r.Fecha,
-      dias: parseNum(r["Dias Restantes"] || r.Dias),
-      cuotaUF: parseNum(r["Cuota UF Total"] || r["Cuota UF"]),
-      cuotaCLP: parseNum(r["Cuota CLP s/IVA"] || r["Cuota CLP"]),
-      cuotaIVA: parseNum(r["Cuota CLP c/IVA"]),
-      bancos: r["Bancos que cobran"] || r.Bancos || "",
-      estado: r.Estado || r.estado || "",
-    }));
-
-    // Proyección mensual leasing
-    const leasingProyeccion = leasingRes.filter(r => {
-      const mes = r.Mes || r.mes || "";
-      const anio = r.Anio || r.anio || "";
-      return mes && anio && parseNum(anio) >= curYear;
-    }).map(r => ({
-      mes: r.Mes || r.mes,
-      anio: parseNum(r.Anio || r.anio),
-      cuotaUF: parseNum(r["Cuota UF\nTotal Mes\n(dia5+dia15)"] || r["Cuota UF Total Mes (dia5+dia15)"] || r["Cuota UF"]),
-      cuotaCLP: parseNum(r["Cuota CLP\ns/IVA"] || r["Cuota CLP s/IVA"]),
-      cuotaIVA: parseNum(r["Cuota CLP\nc/IVA"] || r["Cuota CLP c/IVA"]),
-      contratos: parseNum(r["Contratos\nActivos"] || r["Contratos Activos"]),
-      vence: r["Vence este mes"] || "",
-      deltaUF: parseNum(r["Delta UF\nvs mes ant."] || r["Delta UF vs mes ant."]),
-      ahorroUF: parseNum(r["Ahorro UF/mes"] || r["Ahorro UF"]),
-      nota: r.Nota || r.nota || "",
-    }));
+    // From pre-parsed leasing resumen sections
+    const lrParsed = data.leasingResumen || { emisores: [], totalRow: null, proxCuotas: [], proyeccion: [], refs: {} };
+    const leasingEmisores = lrParsed.emisores;
+    const leasingTotalRow = lrParsed.totalRow;
+    const leasingTotalCuotaIVA = leasingTotalRow?.cuotaIVA || leasingEmisores.reduce((s, e) => s + e.cuotaIVA, 0);
+    const leasingTotalCuotaSinIVA = leasingTotalRow?.cuotaCLP || leasingEmisores.reduce((s, e) => s + e.cuotaCLP, 0);
+    const leasingDeudaTotal = leasingTotalRow?.deudaCLP || leasingEmisores.reduce((s, e) => s + e.deudaCLP, 0);
+    const leasingTotalUF = leasingTotalRow?.cuotaUF || leasingEmisores.reduce((s, e) => s + e.cuotaUF, 0);
+    const leasingProxCuotas = lrParsed.proxCuotas;
+    const leasingProyeccion = lrParsed.proyeccion;
 
     // Cuotas día 5 y día 15 (from detalle)
     const dia5 = leasingDet.filter(r => parseNum(r["Dia Vcto"] || r.DiaVcto) === 5);
@@ -564,16 +622,21 @@ export default function App() {
       saldo: parseNum(r["Saldo Insoluto"] || r.SaldoInsoluto || r.saldo),
     })).filter(r => r.cuota > 0);
 
-    const creditoSaldoActual = creditoRows.length > 0 ? creditoRows[0].saldo : 0;
-    const creditoValorCuota = creditoRows.find(r => r.valorCuota > 0)?.valorCuota || 0;
-    const creditoTotalCuotas = creditoRows.length;
-
-    // Find next cuota to pay (fecha >= today)
-    const todayStr = `${curYear}-${String(curMonth + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    // Deuda del crédito = capital pendiente + intereses pendientes (todas las cuotas futuras)
     const creditoProxima = creditoRows.find(r => {
       const fd = parseDate(r.fecha);
       return fd && fd >= now && r.valorCuota > 0;
     });
+    const creditoCuotasFuturas = creditoRows.filter(r => {
+      const fd = parseDate(r.fecha);
+      return fd && fd >= now;
+    });
+    // Saldo insoluto actual = saldo de la última cuota pagada o primera futura
+    const creditoSaldoActual = creditoCuotasFuturas.length > 0 ? creditoCuotasFuturas[0].saldo : (creditoRows.length > 0 ? creditoRows[creditoRows.length - 1].saldo : 0);
+    // Deuda total = sum of all future cuotas (capital + interest)
+    const creditoDeudaTotal = creditoCuotasFuturas.reduce((s, r) => s + r.valorCuota, 0);
+    const creditoValorCuota = creditoRows.find(r => r.valorCuota > 0)?.valorCuota || 0;
+    const creditoTotalCuotas = creditoRows.length;
     const creditoCuotasPagadas = creditoRows.filter(r => {
       const fd = parseDate(r.fecha);
       return fd && fd < now;
@@ -581,6 +644,7 @@ export default function App() {
     const creditoCuotasPorPagar = creditoTotalCuotas - creditoCuotasPagadas;
     const creditoTotalIntereses = creditoRows.reduce((s, r) => s + r.interes, 0);
     const creditoTotalCapital = creditoRows.reduce((s, r) => s + r.capital, 0);
+    const creditoInteresesPendientes = creditoCuotasFuturas.reduce((s, r) => s + r.interes, 0);
 
     // Leasing alert: próxima cuota urgente
     leasingProxCuotas.filter(r => r.dias <= 5 && r.dias >= 0).forEach(r => {
@@ -620,9 +684,9 @@ export default function App() {
       leasingProxCuotas, leasingProyeccion, cuotaDia5UF, cuotaDia15UF,
       leasingDet,
       // Crédito
-      creditoRows, creditoSaldoActual, creditoValorCuota, creditoTotalCuotas,
+      creditoRows, creditoSaldoActual, creditoDeudaTotal, creditoValorCuota, creditoTotalCuotas,
       creditoProxima, creditoCuotasPagadas, creditoCuotasPorPagar,
-      creditoTotalIntereses, creditoTotalCapital,
+      creditoTotalIntereses, creditoTotalCapital, creditoInteresesPendientes,
       curMonth, curYear,
     };
   }, [data]);
@@ -815,11 +879,11 @@ function HomeView({ C, T, setTab }) {
         <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA) + " c/IVA"} T={T}
           sub={`${C.leasingContratosActivos} contratos · ${C.leasingTractosTotal} tractos`}
           color={T.red} colorBg={T.redBg} />
-        <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoSaldoActual)} T={T}
+        <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoDeudaTotal)} T={T}
           sub={C.creditoProxima ? `Próxima: ${fmtM(C.creditoProxima.valorCuota)} · cuota #${C.creditoProxima.cuota}` : "En gracia"}
           color={T.red} colorBg={T.redBg} />
-        <KpiCard icon={TrendingDown} label="Deuda total" value={fmtM(C.leasingDeudaTotal + C.creditoSaldoActual)} T={T}
-          sub={`Leasing ${fmtM(C.leasingDeudaTotal)} + Crédito ${fmtM(C.creditoSaldoActual)}`}
+        <KpiCard icon={TrendingDown} label="Deuda total" value={fmtM(C.leasingDeudaTotal + C.creditoDeudaTotal)} T={T}
+          sub={`Leasing ${fmtM(C.leasingDeudaTotal)} + Crédito ${fmtM(C.creditoDeudaTotal)}`}
           color={T.red} colorBg={T.redBg} />
       </div>
 
@@ -1339,7 +1403,8 @@ function CreditoView({ C, T }) {
       <h2 style={{ fontSize: 18, fontWeight: 700, color: T.tx }}>Crédito comercial — Banco Itaú</h2>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <KpiCard icon={Banknote} label="Saldo insoluto" value={fmtM(C.creditoSaldoActual)} T={T}
+        <KpiCard icon={Banknote} label="Deuda total pendiente" value={fmtM(C.creditoDeudaTotal)} T={T}
+          sub={`Capital ${fmtM(C.creditoSaldoActual)} + Intereses ${fmtM(C.creditoInteresesPendientes)}`}
           color={T.red} colorBg={T.redBg} />
         <KpiCard icon={DollarSign} label="Cuota mensual" value={fmtM(C.creditoValorCuota)} T={T}
           sub={`${C.creditoTotalCuotas} cuotas totales`}
@@ -1362,11 +1427,12 @@ function CreditoView({ C, T }) {
               ["Cuota mensual", fmtFull(C.creditoValorCuota)],
               ["Cuotas pagadas", String(C.creditoCuotasPagadas)],
               ["Cuotas restantes", String(C.creditoCuotasPorPagar)],
-              ["Saldo insoluto", fmtFull(C.creditoSaldoActual)],
-              ["Total capital a pagar", fmtM(C.creditoTotalCapital)],
-              ["Total intereses", fmtM(C.creditoTotalIntereses)],
+              ["Saldo insoluto (capital)", fmtFull(C.creditoSaldoActual)],
+              ["Intereses pendientes", fmtM(C.creditoInteresesPendientes)],
+              ["Deuda total (cap+int)", fmtM(C.creditoDeudaTotal)],
+              ["Total intereses del crédito", fmtM(C.creditoTotalIntereses)],
             ].map(([label, val], i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: i < 7 ? `1px solid ${T.border}22` : "none" }}>
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: i < 8 ? `1px solid ${T.border}22` : "none" }}>
                 <span style={{ fontSize: 12, color: T.txM }}>{label}</span>
                 <span style={{ fontSize: 12, fontWeight: 500, color: T.tx }}>{val}</span>
               </div>
