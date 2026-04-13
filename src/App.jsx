@@ -3,12 +3,13 @@ import Papa from "papaparse";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area, CartesianGrid, LineChart, Line,
+  Legend,
 } from "recharts";
 import {
   TrendingUp, TrendingDown, DollarSign, Truck, CreditCard, Calendar,
   BarChart3, RefreshCw, Sun, Moon, ChevronRight, AlertTriangle,
   Banknote, PiggyBank, Building2, ArrowUpRight, ArrowDownRight, Clock,
-  Target, Activity, Users, MapPin, Fuel, Menu, X,
+  Target, Activity, Users, MapPin, Fuel, Menu, X, FileText,
 } from "lucide-react";
 
 const CSV = {
@@ -110,6 +111,47 @@ export default function App(){
     const ventasAnoActual=ventasRows.filter(r=>r._date.getFullYear()===curYear).reduce((s,r)=>s+r._neto,0);
     const ventasAnoAnterior=ventasRows.filter(r=>r._date.getFullYear()===curYear-1).reduce((s,r)=>s+r._neto,0);
 
+    // === NUEVO: Comparación mes a mes año actual vs año anterior ===
+    const prevYear = curYear - 1;
+    const ventasPorMesComparado = [];
+    let acumActual = 0, acumAnterior = 0;
+    for (let m = 0; m < 12; m++) {
+      const totalActual = ventasRows.filter(r => r._date.getMonth() === m && r._date.getFullYear() === curYear).reduce((s, r) => s + r._neto, 0);
+      const totalAnterior = ventasRows.filter(r => r._date.getMonth() === m && r._date.getFullYear() === prevYear).reduce((s, r) => s + r._neto, 0);
+      const var_pct = totalAnterior > 0 ? pctChange(totalActual, totalAnterior) : (totalActual > 0 ? 100 : 0);
+      ventasPorMesComparado.push({ mes: MESES[m], actual: totalActual, anterior: totalAnterior, var_pct });
+      // Acumulado solo hasta el mes actual (inclusive)
+      if (m <= curMonth) {
+        acumActual += totalActual;
+        acumAnterior += totalAnterior;
+      }
+    }
+
+    // Acumulado al mismo corte (mismo día del año)
+    const dayOfYear = Math.floor((now - new Date(curYear, 0, 1)) / 86400000);
+    const acumCorteActual = ventasRows.filter(r => {
+      if (r._date.getFullYear() !== curYear) return false;
+      const doy = Math.floor((r._date - new Date(curYear, 0, 1)) / 86400000);
+      return doy <= dayOfYear;
+    }).reduce((s, r) => s + r._neto, 0);
+    const acumCorteAnterior = ventasRows.filter(r => {
+      if (r._date.getFullYear() !== prevYear) return false;
+      const doy = Math.floor((r._date - new Date(prevYear, 0, 1)) / 86400000);
+      return doy <= dayOfYear;
+    }).reduce((s, r) => s + r._neto, 0);
+
+    // === NUEVO: Últimas 5 facturas ===
+    const ultimasFacturas = [...ventasRows]
+      .sort((a, b) => b._date - a._date)
+      .slice(0, 5)
+      .map(r => ({
+        fecha: r._date.toLocaleDateString("es-CL", { day: "2-digit", month: "short", year: "numeric" }),
+        folio: r.FOLIO || r.Folio || r.folio || "—",
+        tipo: r.TIPO || r.Tipo || r.tipo || r["TIPO DOCUMENTO"] || r["Tipo Documento"] || "Factura",
+        cliente: r["RAZON SOCIAL"] || r["Razon Social"] || r.razon_social || "—",
+        neto: r._neto,
+      }));
+
     // VIAJES
     const viajesRows=(data.viajes||[]).map(r=>{const d=parseDate(r.fechainicio||r.FechaInicio||r.fecha);return{...r,_date:d,_cliente:r.Cliente||r.cliente||"",_equipo:r.tipoequipo||r.TipoEquipo||""};}).filter(r=>r._date);
     const viajesMesActual=viajesRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===curYear);
@@ -193,7 +235,10 @@ export default function App(){
     const creditoCuotasPagadas=creditoRows.filter(r=>{const fd=parseDate(r.fecha);return fd&&fd<now;}).length;const creditoCuotasPorPagar=creditoTotalCuotas-creditoCuotasPagadas;const creditoTotalIntereses=creditoRows.reduce((s,r)=>s+r.interes,0);const creditoTotalCapital=creditoRows.reduce((s,r)=>s+r.capital,0);const creditoInteresesPendientes=creditoCuotasFuturas.reduce((s,r)=>s+r.interes,0);
     if(creditoProxima){const fd=parseDate(creditoProxima.fecha);if(fd){const dc=Math.ceil((fd-now)/86400000);if(dc<=7&&dc>=0){alertas.push({type:"info",icon:CreditCard,msg:`Crédito Itaú: cuota #${creditoProxima.cuota} de ${fmtM(creditoProxima.valorCuota)} vence en ${dc} días`});}}}
 
-    return{totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear};
+    return{totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,
+      // NUEVO
+      ventasPorMesComparado,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,
+    };
   },[data]);
 
   if(loading&&!computed){return(<div style={{background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:T.tx,fontFamily:"'Inter','SF Pro Display',system-ui,sans-serif"}}><div style={{textAlign:"center"}}><RefreshCw size={32} color={T.accent} style={{animation:"spin 1s linear infinite"}}/><p style={{marginTop:16,color:T.txM}}>Cargando datos...</p><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div></div>);}
@@ -261,16 +306,142 @@ function HomeView({C,T,setTab}){
 }
 
 function VentasView({C,T}){
-  const mesLabel=MESES_FULL[C.curMonth];const varMes=C.totalMesAnterior>0?pctChange(C.totalMesActual,C.totalMesAnterior):0;const varAno=C.ventasAnoAnterior>0?pctChange(C.ventasAnoActual,C.ventasAnoAnterior):0;
-  const totalTop=(C.topClientes||[]).reduce((s,c)=>s+c.total,0);const pieData=(C.topClientes||[]).slice(0,6).map((c,i)=>({name:c.name.length>18?c.name.slice(0,16)+"...":c.name,value:c.total,pct:totalTop>0?((c.total/C.totalMesActual)*100).toFixed(1):0}));
+  const mesLabel=MESES_FULL[C.curMonth];
+  const varMes=C.totalMesAnterior>0?pctChange(C.totalMesActual,C.totalMesAnterior):0;
+  const varAno=C.ventasAnoAnterior>0?pctChange(C.ventasAnoActual,C.ventasAnoAnterior):0;
+  const varAcumCorte=C.acumCorteAnterior>0?pctChange(C.acumCorteActual,C.acumCorteAnterior):0;
+  const totalTop=(C.topClientes||[]).reduce((s,c)=>s+c.total,0);
+  const pieData=(C.topClientes||[]).slice(0,6).map((c,i)=>({name:c.name.length>18?c.name.slice(0,16)+"...":c.name,value:c.total,pct:totalTop>0?((c.total/C.totalMesActual)*100).toFixed(1):0}));
+
+  // Comparación mes del año anterior vs actual para el mes corriente
+  const mesActualAnterior = (C.ventasPorMesComparado||[])[C.curMonth];
+  const varMesVsAnioAnt = mesActualAnterior && mesActualAnterior.anterior > 0
+    ? pctChange(mesActualAnterior.actual, mesActualAnterior.anterior) : 0;
+
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
     <h2 style={{fontSize:18,fontWeight:700,color:T.tx}}>Ventas y facturación</h2>
-    <div style={{display:"flex",gap:12,flexWrap:"wrap"}}><KpiCard icon={DollarSign} label={`Facturación ${mesLabel}`} value={fmtM(C.totalMesActual)} T={T} sub={varMes!==0?fmtPct(varMes)+" vs mes anterior":undefined} color={T.accent} colorBg={T.accentBg}/><KpiCard icon={TrendingUp} label="Acumulado año" value={fmtM(C.ventasAnoActual)} T={T} sub={varAno!==0?fmtPct(varAno)+" vs "+(C.curYear-1):undefined} color={T.green} colorBg={T.greenBg}/><KpiCard icon={Target} label="Mes anterior" value={fmtM(C.totalMesAnterior)} T={T} color={T.txM} colorBg={T.bg3+"88"}/></div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
-      <SectionCard title="Evolución mensual" icon={BarChart3} T={T}><ResponsiveContainer width="100%" height={220}><BarChart data={C.ventasPorMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border}/><XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>fmtM(v)} width={55}/><Tooltip content={<ChartTooltip T={T}/>}/><Bar dataKey="total" fill={T.accent} radius={[4,4,0,0]} name="Facturación"/></BarChart></ResponsiveContainer></SectionCard>
-      <SectionCard title={`Participación clientes — ${mesLabel}`} icon={Users} T={T} color={T.purple}><ResponsiveContainer width="100%" height={220}><PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={80} innerRadius={40} paddingAngle={2} label={({name,pct})=>`${pct}%`} labelLine={{stroke:T.txD}}>{pieData.map((_,i)=><Cell key={i} fill={T.chart[i%T.chart.length]}/>)}</Pie><Tooltip content={<ChartTooltip T={T}/>}/></PieChart></ResponsiveContainer><div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8,justifyContent:"center"}}>{pieData.map((d,i)=>(<span key={i} style={{fontSize:10,color:T.txM,display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:T.chart[i%T.chart.length]}}/>{d.name}</span>))}</div></SectionCard>
-      <SectionCard title="Top clientes del mes" icon={Users} T={T} color={T.accent}><MiniTable T={T} headers={["#","Cliente","Monto","% Part."]} rows={(C.topClientes||[]).map((c,i)=>[i+1,c.name.length>22?c.name.slice(0,20)+"...":c.name,fmtM(c.total),C.totalMesActual>0?((c.total/C.totalMesActual)*100).toFixed(1)+"%":"0%"])}/></SectionCard>
+
+    {/* KPIs principales */}
+    <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+      <KpiCard icon={DollarSign} label={`Facturación ${mesLabel}`} value={fmtM(C.totalMesActual)} T={T}
+        sub={varMes!==0?fmtPct(varMes)+" vs mes anterior":undefined}
+        color={T.accent} colorBg={T.accentBg}/>
+      <KpiCard icon={TrendingUp} label="Acumulado año" value={fmtM(C.ventasAnoActual)} T={T}
+        sub={varAno!==0?fmtPct(varAno)+` vs ${C.prevYear}`:undefined}
+        color={T.green} colorBg={T.greenBg}/>
+      <KpiCard icon={Target} label="Mes anterior" value={fmtM(C.totalMesAnterior)} T={T}
+        color={T.txM} colorBg={T.bg3+"88"}/>
     </div>
+
+    {/* KPIs nuevos: comparación interanual */}
+    <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+      <KpiCard icon={BarChart3} label={`${mesLabel} ${C.prevYear}`} value={fmtM(mesActualAnterior?.anterior || 0)} T={T}
+        sub={varMesVsAnioAnt!==0?`${C.curYear}: ${fmtPct(varMesVsAnioAnt)}`:undefined}
+        color={T.purple} colorBg={T.purpleBg}/>
+      <KpiCard icon={Activity} label={`Acumulado al corte (día ${new Date().getDate()})`} value={fmtM(C.acumCorteActual)} T={T}
+        sub={`${C.prevYear}: ${fmtM(C.acumCorteAnterior)} (${fmtPct(varAcumCorte)})`}
+        color={varAcumCorte>=0?T.green:T.red} colorBg={varAcumCorte>=0?T.greenBg:T.redBg}/>
+      <KpiCard icon={Target} label={`Meta: superar ${C.prevYear}`} value={fmtM(C.ventasAnoAnterior)} T={T}
+        sub={`Falta ${fmtM(Math.max(0, C.ventasAnoAnterior - C.ventasAnoActual))}`}
+        color={T.amber} colorBg={T.amberBg}/>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
+
+      {/* NUEVO: Gráfico comparativo año actual vs anterior */}
+      <SectionCard title={`Comparación mensual — ${C.curYear} vs ${C.prevYear}`} icon={BarChart3} T={T} color={T.accent}>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={C.ventasPorMesComparado} barGap={2} barCategoryGap="20%">
+            <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+            <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
+            <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>fmtM(v)} width={55}/>
+            <Tooltip content={<ComparisonTooltip T={T} curYear={C.curYear} prevYear={C.prevYear}/>}/>
+            <Bar dataKey="anterior" fill={T.txD} radius={[3,3,0,0]} name={String(C.prevYear)} opacity={0.5}/>
+            <Bar dataKey="actual" fill={T.accent} radius={[3,3,0,0]} name={String(C.curYear)}/>
+            <Legend wrapperStyle={{fontSize:11,color:T.txM}} formatter={(value)=><span style={{color:T.txM,fontSize:11}}>{value}</span>}/>
+          </BarChart>
+        </ResponsiveContainer>
+        {/* Tabla resumen debajo del gráfico */}
+        <div style={{marginTop:12,overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead><tr>
+              <th style={{padding:"6px 8px",textAlign:"left",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:10}}>Mes</th>
+              <th style={{padding:"6px 8px",textAlign:"right",color:T.txD,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:10}}>{C.prevYear}</th>
+              <th style={{padding:"6px 8px",textAlign:"right",color:T.accent,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:10}}>{C.curYear}</th>
+              <th style={{padding:"6px 8px",textAlign:"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:10}}>Var %</th>
+            </tr></thead>
+            <tbody>
+              {(C.ventasPorMesComparado||[]).filter(r=>r.actual>0||r.anterior>0).map((r,i)=>{
+                const vp=r.anterior>0?pctChange(r.actual,r.anterior):0;
+                const isPos=vp>=0;
+                return(<tr key={i} style={{borderBottom:`1px solid ${T.border}22`,background:r.mes===MESES[C.curMonth]?T.accentBg:"transparent"}}>
+                  <td style={{padding:"5px 8px",color:T.tx,fontWeight:r.mes===MESES[C.curMonth]?600:400}}>{r.mes}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right",color:T.txD}}>{fmtM(r.anterior)}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right",color:T.tx,fontWeight:500}}>{fmtM(r.actual)}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right",color:isPos?T.green:T.red,fontWeight:600,fontSize:11}}>{r.anterior>0?fmtPct(vp):"—"}</td>
+                </tr>);
+              })}
+              <tr style={{borderTop:`2px solid ${T.border}`}}>
+                <td style={{padding:"6px 8px",color:T.tx,fontWeight:700}}>TOTAL</td>
+                <td style={{padding:"6px 8px",textAlign:"right",color:T.txD,fontWeight:600}}>{fmtM(C.acumAnterior)}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",color:T.accent,fontWeight:700}}>{fmtM(C.acumActual)}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",color:C.acumActual>=C.acumAnterior?T.green:T.red,fontWeight:700}}>{C.acumAnterior>0?fmtPct(pctChange(C.acumActual,C.acumAnterior)):"—"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+
+      {/* Participación clientes (existente) */}
+      <SectionCard title={`Participación clientes — ${mesLabel}`} icon={Users} T={T} color={T.purple}>
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={80} innerRadius={40} paddingAngle={2} label={({name,pct})=>`${pct}%`} labelLine={{stroke:T.txD}}>{pieData.map((_,i)=><Cell key={i} fill={T.chart[i%T.chart.length]}/>)}</Pie><Tooltip content={<ChartTooltip T={T}/>}/></PieChart>
+        </ResponsiveContainer>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8,justifyContent:"center"}}>{pieData.map((d,i)=>(<span key={i} style={{fontSize:10,color:T.txM,display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:T.chart[i%T.chart.length]}}/>{d.name}</span>))}</div>
+      </SectionCard>
+
+      {/* Top clientes del mes (existente) */}
+      <SectionCard title="Top clientes del mes" icon={Users} T={T} color={T.accent}>
+        <MiniTable T={T} headers={["#","Cliente","Monto","% Part."]} rows={(C.topClientes||[]).map((c,i)=>[i+1,c.name.length>22?c.name.slice(0,20)+"...":c.name,fmtM(c.total),C.totalMesActual>0?((c.total/C.totalMesActual)*100).toFixed(1)+"%":"0%"])}/>
+      </SectionCard>
+
+      {/* NUEVO: Últimas 5 facturas ingresadas */}
+      <SectionCard title="Últimas facturas ingresadas" icon={FileText} T={T} color={T.green}>
+        {(C.ultimasFacturas||[]).length > 0 ? (
+          <MiniTable T={T} maxRows={5} headers={["Fecha","Folio","Cliente","Tipo","Neto"]}
+            rows={(C.ultimasFacturas||[]).map(r => [
+              r.fecha,
+              r.folio,
+              r.cliente.length > 20 ? r.cliente.slice(0, 18) + "..." : r.cliente,
+              <span key="tipo" style={{
+                fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 4,
+                background: String(r.tipo).toLowerCase().includes("credito") || String(r.tipo).toLowerCase().includes("crédito") ? T.redBg : T.greenBg,
+                color: String(r.tipo).toLowerCase().includes("credito") || String(r.tipo).toLowerCase().includes("crédito") ? T.red : T.green,
+              }}>{String(r.tipo).toLowerCase().includes("credito") || String(r.tipo).toLowerCase().includes("crédito") ? "NC" : "FAC"}</span>,
+              <span key="neto" style={{
+                color: r.neto < 0 ? T.red : T.tx,
+                fontWeight: 500,
+              }}>{fmtM(r.neto)}</span>,
+            ])}
+          />
+        ) : <p style={{fontSize:12,color:T.txM,padding:8}}>Sin facturas recientes</p>}
+      </SectionCard>
+    </div>
+  </div>);
+}
+
+// Tooltip personalizado para el gráfico comparativo
+function ComparisonTooltip({active,payload,label,T,curYear,prevYear}){
+  if(!active||!payload?.length)return null;
+  const anterior=payload.find(p=>p.dataKey==="anterior");
+  const actual=payload.find(p=>p.dataKey==="actual");
+  const antVal=anterior?.value||0;const actVal=actual?.value||0;
+  const vp=antVal>0?pctChange(actVal,antVal):0;
+  return(<div style={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"10px 14px",fontSize:12}}>
+    <div style={{color:"#e2e8f0",fontWeight:700,marginBottom:6}}>{label}</div>
+    <div style={{display:"flex",gap:8,color:"#94a3b8",marginBottom:3}}><span>{prevYear}:</span><span style={{fontWeight:600,color:"#94a3b8"}}>{fmtM(antVal)}</span></div>
+    <div style={{display:"flex",gap:8,color:"#3b82f6",marginBottom:3}}><span>{curYear}:</span><span style={{fontWeight:600,color:"#3b82f6"}}>{fmtM(actVal)}</span></div>
+    {antVal>0&&(<div style={{borderTop:"1px solid #334155",paddingTop:4,marginTop:4,color:vp>=0?"#22c55e":"#ef4444",fontWeight:700,fontSize:13}}>{fmtPct(vp)}</div>)}
   </div>);
 }
 
