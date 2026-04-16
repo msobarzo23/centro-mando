@@ -271,16 +271,16 @@ function computeHighlights(C){
     });
   }
 
-  // 8. Cobertura semana crítica
+  // 8. Cobertura semana crítica — usa columna "Falta" del calendario (tu control real)
   if(C.primeraSemanaCritica){
-    const faltante=C.primeraSemanaCritica.compromisos-C.primeraSemanaCritica.ingresos;
+    const faltante=C.primeraSemanaCritica.falta;
     const esta=C.primeraSemanaCritica.semana;
     items.push({
       score:esta===1?95:esta===2?85:75,
       type:esta===1?"danger":"warning",
       icon:Gauge,
-      title:`Cobertura insuficiente en semana ${esta} (${C.primeraSemanaCritica.label})`,
-      text:`Compromisos ${fmtM(C.primeraSemanaCritica.compromisos)} vs ingresos esperados ${fmtM(C.primeraSemanaCritica.ingresos)} — falta ${fmtM(faltante)}`
+      title:`Semana ${esta} con compromisos sin cubrir (${C.primeraSemanaCritica.label})`,
+      text:`Faltan ${fmtM(faltante)} según calendario. Compromisos ${fmtM(C.primeraSemanaCritica.compromisos)} · Guardado ${fmtM(C.primeraSemanaCritica.guardado||0)}`
     });
   }
 
@@ -777,6 +777,9 @@ export default function App(){
       const neto = ingresosSemana - compMonto;
       cajaRestante = Math.max(0, neto); // no arrastramos faltantes
       const ratio = compMonto>0 ? ingresosSemana/compMonto : null;
+      // Confianza en el control manual de Miguel: columnas "Guardado" y "Falta" del calendario
+      const guardadoSemana=compSemana.reduce((s,r)=>s+r.guardado,0);
+      const faltaSemana=compSemana.reduce((s,r)=>s+r.falta,0);
       coberturaSemanas.push({
         semana:w+1,
         inicio:ws,fin:we,
@@ -789,6 +792,8 @@ export default function App(){
         ratio,
         dapCount:dapSemana.length,
         compCount:compSemana.length,
+        guardado:guardadoSemana,
+        falta:faltaSemana,
       });
     }
     // Cobertura global próx 30d — criterio "liquidez operativa del mes":
@@ -809,7 +814,8 @@ export default function App(){
     const liquidez30Total = liquidez30 + colchonAdicional30;
     const coberturaRatio30 = comp30>0 ? liquidez30/comp30 : null;
     const coberturaRatio30ConColchon = comp30>0 ? liquidez30Total/comp30 : null;
-    const primeraSemanaCritica = coberturaSemanas.find(s=>s.ratio!==null && s.ratio<1);
+    // La semana es crítica solo si TÚ marcaste "falta" > 0 en el calendario (no por cálculo derivado)
+    const primeraSemanaCritica = coberturaSemanas.find(s=>s.falta>0);
 
     // ══════════ MARGEN MES ESTIMADO ══════════
     // Facturación mes actual - (compromisos del mes + cuota leasing c/IVA + cuota crédito)
@@ -823,7 +829,7 @@ export default function App(){
     if(totalContratados>0&&pctOcupacionConductores<75){alertas.push({type:"warning",icon:Users,msg:`Ocupación conductores: ${pctOcupacionConductores.toFixed(1)}% — ${totalEnExpedicion} de ${totalContratados} en expedición`});}
     if(totalTractocamiones>0&&pctOcupacionTractos<75){alertas.push({type:"warning",icon:Truck,msg:`Ocupación tractos prom. diario: ${pctOcupacionTractos.toFixed(1)}% — ${tractosActivosMes} de ${totalTractocamiones} (prom. ${diasConDatosTractos} días)`});}
     if(totalTractocamiones>0&&pctOcupacionTractosAyer<75&&lastFullDay){alertas.push({type:"danger",icon:Truck,msg:`Ocupación tractos ${lastFullDayLabel}: ${pctOcupacionTractosAyer.toFixed(1)}% — ${tractosActivosAyer} de ${totalTractocamiones}`});}
-    if(primeraSemanaCritica){const faltante=primeraSemanaCritica.compromisos-primeraSemanaCritica.ingresos;alertas.push({type:"danger",icon:AlertTriangle,msg:`Cobertura semana ${primeraSemanaCritica.label}: faltan ${fmtM(faltante)} (compromisos ${fmtM(primeraSemanaCritica.compromisos)} vs ingresos ${fmtM(primeraSemanaCritica.ingresos)})`});}
+    if(primeraSemanaCritica){alertas.push({type:"danger",icon:AlertTriangle,msg:`Semana ${primeraSemanaCritica.label}: faltan ${fmtM(primeraSemanaCritica.falta)} por cubrir (de ${fmtM(primeraSemanaCritica.compromisos)} en compromisos, ${fmtM(primeraSemanaCritica.guardado||0)} guardado)`});}
     if(coberturaRatio30!==null && coberturaRatio30<1){alertas.push({type:"warning",icon:AlertTriangle,msg:`Liquidez 30d insuficiente: caja+DAPs ${fmtM(liquidez30)} vs compromisos ${fmtM(comp30)} (${(coberturaRatio30*100).toFixed(0)}% cobertura)`});}
 
     // ══════════ LEASING ══════════
@@ -1358,25 +1364,26 @@ function FinanzasView({C,T}){
       <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:T.txM}}>Ganancia total DAPs</span><span style={{fontSize:12,fontWeight:600,color:T.green}}>{fmtM(C.gananciaDAP)}</span></div>
     </SectionCard>
 
-    <SectionCard title="Cobertura de liquidez — próximas 4 semanas" icon={Gauge} T={T} color={T.teal} action={<span style={{fontSize:10,color:T.txD,fontStyle:"italic"}}>Caja inicial + DAPs que vencen vs compromisos</span>}>
+    <SectionCard title="Cobertura de liquidez — próximas 4 semanas" icon={Gauge} T={T} color={T.teal} action={<span style={{fontSize:10,color:T.txD,fontStyle:"italic"}}>Basado en tu calendario (columna "Falta")</span>}>
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-          <thead><tr>{["Semana","Período","Caja inicial","DAPs que vencen","Ingresos","Compromisos","Neto","Ratio"].map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i<=1?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+          <thead><tr>{["Semana","Período","Caja inicial","DAPs Trab.","Compromisos","Guardado","Falta","Estado"].map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i<=1?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
           <tbody>
             {(C.coberturaSemanas||[]).map((s,i)=>{
-              const rc=s.ratio;
-              const ratioColor=rc===null?T.txD:rc>=1.2?T.green:rc>=1?T.amber:T.red;
-              const ratioBg=rc===null?"transparent":rc>=1.2?T.greenBg:rc>=1?T.amberBg:T.redBg;
+              // Semáforo basado en el control manual del calendario (columna Falta)
+              const estadoColor=s.compCount===0?T.txD:s.falta===0?T.green:s.falta<s.compromisos*0.2?T.amber:T.red;
+              const estadoBg=s.compCount===0?"transparent":s.falta===0?T.greenBg:s.falta<s.compromisos*0.2?T.amberBg:T.redBg;
+              const estadoLabel=s.compCount===0?"—":s.falta===0?"✓ Cubierto":s.falta<s.compromisos*0.2?"⚠ Por ajustar":"✗ Descubierto";
               return(
                 <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
                   <td style={{padding:"9px 10px",color:T.tx,fontWeight:600}}>S{s.semana}{i===0&&<span style={{marginLeft:6,fontSize:9,padding:"2px 6px",borderRadius:4,background:T.accentBg,color:T.accent,fontWeight:700}}>ACTUAL</span>}</td>
                   <td style={{padding:"9px 10px",color:T.txM,fontSize:11}}>{s.label}</td>
                   <td style={{padding:"9px 10px",textAlign:"right",color:s.cajaInicio>0?T.tx:T.txD}}>{fmtM(s.cajaInicio)}</td>
                   <td style={{padding:"9px 10px",textAlign:"right",color:s.dapVence>0?T.green:T.txD,fontWeight:s.dapVence>0?600:400}}>{s.dapCount>0?`${fmtM(s.dapVence)} (${s.dapCount})`:"—"}</td>
-                  <td style={{padding:"9px 10px",textAlign:"right",color:T.tx,fontWeight:600}}>{fmtM(s.ingresos)}</td>
-                  <td style={{padding:"9px 10px",textAlign:"right",color:T.tx}}>{s.compCount>0?`${fmtM(s.compromisos)} (${s.compCount})`:"—"}</td>
-                  <td style={{padding:"9px 10px",textAlign:"right",color:s.neto>=0?T.green:T.red,fontWeight:700}}>{s.neto>=0?"+":""}{fmtM(s.neto)}</td>
-                  <td style={{padding:"9px 10px",textAlign:"right"}}>{rc!==null?<span style={{background:ratioBg,color:ratioColor,padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:700}}>{rc.toFixed(2)}x</span>:<span style={{color:T.txD}}>—</span>}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",color:T.tx,fontWeight:600}}>{s.compCount>0?`${fmtM(s.compromisos)} (${s.compCount})`:"—"}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",color:s.guardado>0?T.green:T.txD,fontWeight:s.guardado>0?500:400}}>{s.guardado>0?fmtM(s.guardado):"—"}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",color:s.falta>0?T.red:T.txD,fontWeight:s.falta>0?700:400}}>{s.falta>0?fmtM(s.falta):"—"}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right"}}><span style={{background:estadoBg,color:estadoColor,padding:"3px 10px",borderRadius:10,fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{estadoLabel}</span></td>
                 </tr>
               );
             })}
@@ -1384,8 +1391,8 @@ function FinanzasView({C,T}){
         </table>
       </div>
       <div style={{marginTop:10,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
-        <strong style={{color:T.tx}}>Lectura:</strong> la semana actual usa toda la caja. Semanas siguientes solo disponen de caja remanente + <strong>DAP Trabajo</strong> que vence esa semana (DAP Crédito e Inversión no cuentan — están amarrados a compra de terrenos y ahorro largo plazo).
-        Ratio = ingresos / compromisos. <span style={{color:T.green,fontWeight:600}}>≥1.20x verde</span> · <span style={{color:T.amber,fontWeight:600}}>1.00-1.20x amarillo</span> · <span style={{color:T.red,fontWeight:600}}>&lt;1.00x rojo</span>.
+        <strong style={{color:T.tx}}>Lectura:</strong> el estado se basa en tu control manual del calendario (columna <strong>"Falta"</strong>), no en un cálculo derivado. <span style={{color:T.green,fontWeight:600}}>✓ Cubierto</span> = falta = 0 · <span style={{color:T.amber,fontWeight:600}}>⚠ Por ajustar</span> = falta &lt; 20% compromisos · <span style={{color:T.red,fontWeight:600}}>✗ Descubierto</span> = falta ≥ 20%.
+        {" "}Las columnas Caja inicial y DAPs Trabajo son referencia de de dónde viene el dinero para cubrir lo guardado.
       </div>
     </SectionCard>
 
