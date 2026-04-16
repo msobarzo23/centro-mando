@@ -3,13 +3,14 @@ import Papa from "papaparse";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area, CartesianGrid, LineChart, Line,
-  Legend,
+  Legend, ComposedChart, ReferenceLine,
 } from "recharts";
 import {
   TrendingUp, TrendingDown, DollarSign, Truck, CreditCard, Calendar,
   BarChart3, RefreshCw, Sun, Moon, ChevronRight, AlertTriangle,
   Banknote, PiggyBank, Building2, ArrowUpRight, ArrowDownRight, Clock,
-  Target, Activity, Users, MapPin, Fuel, Menu, X, FileText,
+  Target, Activity, Users, MapPin, Fuel, Menu, X, FileText, Zap,
+  Sparkles, CircleDot, Flame, Gauge, ShieldCheck, ShieldAlert, Shield,
 } from "lucide-react";
 
 const CSV = {
@@ -34,6 +35,9 @@ const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov"
 const MESES_FULL = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const COMODIN_TRACTO = "AA1111";
 const COMODIN_CONDUCTOR = "CONDUCTOR, TRANSPORTES BELLO";
+const MEPCO_ADJUSTMENT_MONTH = 5; // Mayo 2026
+const MEPCO_CLIENTS_VISIBLE = ["Calidra", "CBB", "Novandino Litio", "Enaex", "Maxam", "Orica"];
+
 const normName = (n) => String(n||"").toUpperCase().replace(/,/g,"").replace(/\s+/g," ").trim();
 
 const parseNum = (v) => {
@@ -59,26 +63,319 @@ const fmtFull=(n)=>"$"+Math.round(n).toLocaleString("es-CL");
 const fmtPct=(n)=>(n>=0?"+":"")+n.toFixed(1)+"%";
 const pctChange=(cur,prev)=>prev===0?(cur>0?100:0):((cur-prev)/prev)*100;
 
+// Saludo dinámico según hora
+const getSaludo = () => {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return "Buenos días";
+  if (h >= 12 && h < 19) return "Buenas tardes";
+  return "Buenas noches";
+};
+const getFechaLarga = () => {
+  const d = new Date();
+  const dias = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+  return `${dias[d.getDay()]}, ${d.getDate()} de ${MESES_FULL[d.getMonth()].toLowerCase()} de ${d.getFullYear()}`;
+};
+
+// Días hábiles (lunes-viernes, sin feriados)
+function businessDaysInMonth(year, month) {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let count = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow = new Date(year, month - 1, d).getDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+}
+function businessDaysElapsed(year, month, today) {
+  const daysElapsed = Math.min(today.getDate(), new Date(year, month, 0).getDate());
+  let count = 0;
+  for (let d = 1; d <= daysElapsed; d++) {
+    const dow = new Date(year, month - 1, d).getDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+}
+
 const fetchCSV=(url)=>new Promise((resolve)=>{Papa.parse(url,{download:true,header:true,skipEmptyLines:true,complete:(r)=>resolve(r.data||[]),error:()=>resolve([])});});
 const fetchFinCSV=(url,knownHeaders)=>new Promise((resolve)=>{Papa.parse(url,{download:true,header:false,skipEmptyLines:true,complete:(r)=>{const rows=r.data||[];let headerIdx=-1,bestScore=0;for(let i=0;i<Math.min(rows.length,20);i++){const row=rows[i].map(c=>String(c||"").trim().toLowerCase());const score=knownHeaders.reduce((s,h)=>s+(row.some(c=>c.includes(h.toLowerCase()))?1:0),0);if(score>bestScore){bestScore=score;headerIdx=i;}}if(headerIdx===-1||bestScore<2){resolve([]);return;}const headers=rows[headerIdx].map(c=>String(c||"").trim());const data=[];for(let i=headerIdx+1;i<rows.length;i++){const row=rows[i];if(!row||row.every(c=>!c||String(c).trim()===""))continue;const obj={};headers.forEach((h,ci)=>{if(h)obj[h]=row[ci]||"";});data.push(obj);}resolve(data);},error:()=>resolve([])});});
 const fetchRawCSV=(url)=>new Promise((resolve)=>{Papa.parse(url,{download:true,header:false,skipEmptyLines:false,complete:(r)=>resolve(r.data||[]),error:()=>resolve([])});});
 
 const parseLeasingResumen=(raw)=>{const result={emisores:[],totalRow:null,proxCuotas:[],proyeccion:[],refs:{}};if(!raw||raw.length===0)return result;let secEmisor=-1,secProxCuotas=-1,secProyeccion=-1,secRefs=-1;for(let i=0;i<raw.length;i++){const first=String(raw[i]?.[0]||"").toUpperCase();if(first.includes("RESUMEN POR EMISOR"))secEmisor=i;if(first.includes("PROXIMAS CUOTAS"))secProxCuotas=i;if(first.includes("PROYECCION MENSUAL"))secProyeccion=i;if(first.includes("CELDAS DE REFERENCIA"))secRefs=i;}if(secEmisor>=0){const hdrRow=secEmisor+1;for(let i=hdrRow+1;i<raw.length;i++){const r=raw[i];if(!r||!r[0]||String(r[0]).trim()==="")break;const emisor=String(r[0]).trim();if(emisor.includes("TOTAL")){result.totalRow={emisor,contratos:parseNum(r[1]),tractos:parseNum(r[2]),cuotaUF:parseNum(r[3]),cuotaCLP:parseNum(r[4]),cuotaIVA:parseNum(r[5]),deudaUF:parseNum(r[6]),deudaCLP:parseNum(r[7])};}else{result.emisores.push({emisor,contratos:parseNum(r[1]),tractos:parseNum(r[2]),cuotaUF:parseNum(r[3]),cuotaCLP:parseNum(r[4]),cuotaIVA:parseNum(r[5]),deudaUF:parseNum(r[6]),deudaCLP:parseNum(r[7])});}}}if(secProxCuotas>=0){const hdrRow=secProxCuotas+1;const hoy=todayMidnight();for(let i=hdrRow+1;i<raw.length;i++){const r=raw[i];if(!r||!r[0]||String(r[0]).trim()==="")break;const fechaStr=String(r[0]).trim();const fechaParsed=parseDate(fechaStr);const diasCalc=fechaParsed?Math.ceil((fechaParsed.getTime()-hoy.getTime())/86400000):parseNum(r[1]);result.proxCuotas.push({fecha:fechaStr,dias:diasCalc,cuotaUF:parseNum(r[2]),cuotaCLP:parseNum(r[3]),cuotaIVA:parseNum(r[4]),bancos:String(r[5]||"").trim(),estado:String(r[6]||"").trim()});}}if(secProyeccion>=0){let hdrRow=secProyeccion+2;for(let i=hdrRow+1;i<raw.length;i++){const r=raw[i];if(!r)continue;const mes=String(r[0]||"").trim();const anio=parseNum(r[1]);if(!mes||anio<2020){if(mes===""&&anio===0)continue;break;}result.proyeccion.push({mes,anio,cuotaUF:parseNum(r[2]),cuotaCLP:parseNum(r[3]),cuotaIVA:parseNum(r[4]),bciDia5:parseNum(r[5]),bciDia15:parseNum(r[6]),vfs:parseNum(r[7]),bchile:parseNum(r[8]),contratos:parseNum(r[9]),vence:String(r[10]||"").trim(),deltaUF:parseNum(r[11]),ahorroUF:parseNum(r[12]),nota:String(r[13]||"").trim()});}}if(secRefs>=0){for(let i=secRefs+1;i<raw.length;i++){const r=raw[i];if(!r||!r[0])break;const key=String(r[0]).trim();const val=String(r[1]||"").trim();if(key)result.refs[key]=val;}}return result;};
 
-const themes={dark:{bg:"#0b1120",bg2:"#111827",bg3:"#1e293b",card:"#151f32",tx:"#e2e8f0",txM:"#94a3b8",txD:"#64748b",border:"#1e3a5f",accent:"#3b82f6",accentBg:"rgba(59,130,246,0.12)",green:"#22c55e",greenBg:"rgba(34,197,94,0.12)",red:"#ef4444",redBg:"rgba(239,68,68,0.12)",amber:"#f59e0b",amberBg:"rgba(245,158,11,0.12)",purple:"#a855f7",purpleBg:"rgba(168,85,247,0.12)",teal:"#14b8a6",tealBg:"rgba(20,184,166,0.12)",chart:["#3b82f6","#22c55e","#f59e0b","#ef4444","#a855f7","#14b8a6","#ec4899","#6366f1"]},light:{bg:"#f0f4f8",bg2:"#ffffff",bg3:"#e2e8f0",card:"#ffffff",tx:"#0f172a",txM:"#475569",txD:"#94a3b8",border:"#e2e8f0",accent:"#2563eb",accentBg:"rgba(37,99,235,0.08)",green:"#16a34a",greenBg:"rgba(22,163,74,0.08)",red:"#dc2626",redBg:"rgba(220,38,38,0.08)",amber:"#d97706",amberBg:"rgba(217,119,6,0.08)",purple:"#9333ea",purpleBg:"rgba(147,51,234,0.08)",teal:"#0d9488",tealBg:"rgba(13,148,136,0.08)",chart:["#2563eb","#16a34a","#d97706","#dc2626","#9333ea","#0d9488","#db2777","#4f46e5"]}};
-
-const KpiCard=({icon:Icon,label,value,sub,color,colorBg,T})=>(<div style={{background:T.card,borderRadius:14,padding:"16px 18px",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",gap:8,minWidth:0,flex:"1 1 160px"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{background:colorBg,borderRadius:8,padding:6,display:"flex"}}><Icon size={16} color={color}/></div><span style={{fontSize:11,color:T.txM,fontWeight:500,letterSpacing:0.3}}>{label}</span></div><div style={{fontSize:22,fontWeight:700,color:T.tx,letterSpacing:-0.5}}>{value}</div>{sub&&<div style={{fontSize:12,color:sub.startsWith("+")?T.green:sub.startsWith("-")?T.red:T.txM}}>{sub}</div>}</div>);
-const MiniTable=({headers,rows,T,maxRows=8})=>(<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{headers.map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i===0?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap",fontSize:11}}>{h}</th>))}</tr></thead><tbody>{rows.slice(0,maxRows).map((row,ri)=>(<tr key={ri} style={{borderBottom:`1px solid ${T.border}22`}}>{row.map((cell,ci)=>(<td key={ci} style={{padding:"7px 10px",textAlign:ci===0?"left":"right",color:T.tx,whiteSpace:"nowrap"}}>{cell}</td>))}</tr>))}</tbody></table></div>);
-const SectionCard=({title,icon:Icon,children,T,color})=>(<div style={{background:T.card,borderRadius:14,padding:"18px 20px",border:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>{Icon&&<Icon size={16} color={color||T.accent}/>}<span style={{fontSize:14,fontWeight:600,color:T.tx}}>{title}</span></div>{children}</div>);
-const ChartTooltip=({active,payload,label,T,prefix="$"})=>{if(!active||!payload?.length)return null;return(<div style={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"8px 12px",fontSize:12}}><div style={{color:"#e2e8f0",fontWeight:600,marginBottom:4}}>{label}</div>{payload.map((p,i)=>(<div key={i} style={{color:p.color,display:"flex",gap:8}}><span>{p.name}:</span><span style={{fontWeight:600}}>{prefix==="$"?fmtM(p.value):p.value?.toLocaleString("es-CL")}</span></div>))}</div>);};
-const OccupationBar=({label,activos,total,T})=>{const pct=total>0?(activos/total)*100:0;const isLow=pct<75;const barColor=isLow?T.red:pct<85?T.amber:T.green;return(<div style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:T.txM}}>{label}</span><span style={{fontSize:12,fontWeight:600,color:barColor}}>{activos} / {total} ({pct.toFixed(1)}%)</span></div><div style={{height:8,borderRadius:4,background:T.bg3,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(pct,100)}%`,borderRadius:4,background:barColor,transition:"width 0.5s"}}/></div></div>);};
+const themes={dark:{bg:"#0b1120",bg2:"#111827",bg3:"#1e293b",card:"#151f32",tx:"#e2e8f0",txM:"#94a3b8",txD:"#64748b",border:"#1e3a5f",accent:"#3b82f6",accentBg:"rgba(59,130,246,0.12)",green:"#22c55e",greenBg:"rgba(34,197,94,0.12)",red:"#ef4444",redBg:"rgba(239,68,68,0.12)",amber:"#f59e0b",amberBg:"rgba(245,158,11,0.12)",purple:"#a855f7",purpleBg:"rgba(168,85,247,0.12)",teal:"#14b8a6",tealBg:"rgba(20,184,166,0.12)",violet:"#8b5cf6",violetBg:"rgba(139,92,246,0.12)",tooltipBg:"#101a2d",tooltipTx:"#e2e8f0",chart:["#3b82f6","#22c55e","#f59e0b","#ef4444","#a855f7","#14b8a6","#ec4899","#6366f1"]},light:{bg:"#f0f4f8",bg2:"#ffffff",bg3:"#e2e8f0",card:"#ffffff",tx:"#0f172a",txM:"#475569",txD:"#94a3b8",border:"#e2e8f0",accent:"#2563eb",accentBg:"rgba(37,99,235,0.08)",green:"#16a34a",greenBg:"rgba(22,163,74,0.08)",red:"#dc2626",redBg:"rgba(220,38,38,0.08)",amber:"#d97706",amberBg:"rgba(217,119,6,0.08)",purple:"#9333ea",purpleBg:"rgba(147,51,234,0.08)",teal:"#0d9488",tealBg:"rgba(13,148,136,0.08)",violet:"#7c3aed",violetBg:"rgba(124,58,237,0.08)",tooltipBg:"#1e293b",tooltipTx:"#f8fafc",chart:["#2563eb","#16a34a","#d97706","#dc2626","#9333ea","#0d9488","#db2777","#4f46e5"]}};
 
 const TABS=[{id:"home",label:"Inicio",icon:Activity},{id:"ventas",label:"Ventas",icon:DollarSign},{id:"operaciones",label:"Operaciones",icon:Truck},{id:"finanzas",label:"Finanzas",icon:Banknote},{id:"leasing",label:"Leasing",icon:Truck},{id:"credito",label:"Crédito",icon:CreditCard},{id:"alertas",label:"Alertas",icon:AlertTriangle}];
 
 
+// ═════════════════════════════════════════════════════════════════════════════
+// COMPONENTES BASE
+// ═════════════════════════════════════════════════════════════════════════════
+
+const KpiCard=({icon:Icon,label,value,sub,color,colorBg,T,badge})=>(<div style={{background:T.card,borderRadius:14,padding:"16px 18px",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",gap:8,minWidth:0,flex:"1 1 160px",position:"relative",overflow:"hidden"}}><div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg, ${color}, transparent 70%)`}}/><div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{background:colorBg,borderRadius:8,padding:6,display:"flex"}}><Icon size={16} color={color}/></div><span style={{fontSize:11,color:T.txM,fontWeight:500,letterSpacing:0.3}}>{label}</span></div>{badge&&<span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:999,background:colorBg,color,letterSpacing:0.5}}>{badge}</span>}</div><div style={{fontSize:22,fontWeight:700,color:T.tx,letterSpacing:-0.5}}>{value}</div>{sub&&<div style={{fontSize:12,color:sub.startsWith("+")?T.green:sub.startsWith("-")?T.red:T.txM}}>{sub}</div>}</div>);
+
+const MiniTable=({headers,rows,T,maxRows=8})=>(<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{headers.map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i===0?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap",fontSize:11}}>{h}</th>))}</tr></thead><tbody>{rows.slice(0,maxRows).map((row,ri)=>(<tr key={ri} style={{borderBottom:`1px solid ${T.border}22`}}>{row.map((cell,ci)=>(<td key={ci} style={{padding:"7px 10px",textAlign:ci===0?"left":"right",color:T.tx,whiteSpace:"nowrap"}}>{cell}</td>))}</tr>))}</tbody></table></div>);
+
+const SectionCard=({title,icon:Icon,children,T,color,action})=>(<div style={{background:T.card,borderRadius:14,padding:"18px 20px",border:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:8}}>{Icon&&<Icon size={16} color={color||T.accent}/>}<span style={{fontSize:14,fontWeight:600,color:T.tx}}>{title}</span></div>{action}</div>{children}</div>);
+
+// Tooltip de charts que SÍ respeta el tema (fix del bug original)
+const ChartTooltip=({active,payload,label,T,prefix="$"})=>{
+  if(!active||!payload?.length)return null;
+  return(<div style={{background:T.tooltipBg,border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 12px",fontSize:12,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
+    <div style={{color:T.tooltipTx,fontWeight:600,marginBottom:4}}>{label}</div>
+    {payload.map((p,i)=>(<div key={i} style={{color:p.color,display:"flex",gap:8}}><span>{p.name}:</span><span style={{fontWeight:600}}>{prefix==="$"?fmtM(p.value):p.value?.toLocaleString("es-CL")}</span></div>))}
+  </div>);
+};
+
+const OccupationBar=({label,activos,total,T})=>{const pct=total>0?(activos/total)*100:0;const isLow=pct<75;const barColor=isLow?T.red:pct<85?T.amber:T.green;return(<div style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:T.txM}}>{label}</span><span style={{fontSize:12,fontWeight:600,color:barColor}}>{activos} / {total} ({pct.toFixed(1)}%)</span></div><div style={{height:8,borderRadius:4,background:T.bg3,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(pct,100)}%`,borderRadius:4,background:barColor,transition:"width 0.5s"}}/></div></div>);};
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// BANNER MEPCO (mismo estilo que dashboard-ventas)
+// ═════════════════════════════════════════════════════════════════════════════
+
+function MepcoBanner({T,year,lastMonth,compact=false}){
+  const [expanded,setExpanded]=useState(false);
+  const adjustmentActive = year>2026 || (year===2026 && lastMonth>=MEPCO_ADJUSTMENT_MONTH);
+  return(
+    <div style={{
+      background:`linear-gradient(135deg, ${T.amber}18, ${T.amber}06)`,
+      border:`1px solid ${T.amber}55`,
+      borderRadius:12,padding:"12px 16px",
+      display:"flex",alignItems:"flex-start",gap:12,
+      position:"relative",overflow:"hidden",
+    }}>
+      <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:T.amber}}/>
+      <div style={{background:`${T.amber}22`,borderRadius:8,padding:6,display:"flex",flexShrink:0}}><Zap size={16} color={T.amber}/></div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:3}}>
+          <span style={{fontWeight:700,color:T.tx,fontSize:12}}>Ajuste Extraordinario de Tarifas Post-MEPCO</span>
+          <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:999,background:adjustmentActive?`${T.green}22`:`${T.amber}22`,color:adjustmentActive?T.green:T.amber,letterSpacing:0.4}}>
+            {adjustmentActive?"● VIGENTE":"○ DESDE MAYO 2026"}
+          </span>
+        </div>
+        <div style={{color:T.txM,fontSize:11,lineHeight:1.5}}>
+          {compact?
+            <>Desde mayo 2026 aplica ajuste tarifario a múltiples clientes. Impacto progresivo en facturación. <button onClick={()=>setExpanded(!expanded)} style={{background:"transparent",border:"none",color:T.amber,fontWeight:600,cursor:"pointer",fontSize:11,padding:0}}>{expanded?"▲ Ocultar":"▼ Ver más"}</button></>
+            :
+            <>Desde mayo 2026 aplica ajuste extraordinario de tarifas a múltiples clientes (Calidra, CBB, Novandino Litio, Enaex, Maxam, Orica, entre otros) en distintos porcentajes, como respuesta al alza del PBASE de diésel. El impacto se reflejará progresivamente en la facturación a partir de mayo. <button onClick={()=>setExpanded(!expanded)} style={{background:"transparent",border:"none",color:T.amber,fontWeight:600,cursor:"pointer",fontSize:11,padding:0}}>{expanded?"▲ Ocultar":"▼ Ver más"}</button></>
+          }
+        </div>
+        {expanded&&(
+          <div style={{marginTop:8,padding:"10px 12px",background:`${T.bg3}66`,borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
+            <div style={{color:T.tx,fontWeight:600,marginBottom:4}}>Consideraciones de lectura:</div>
+            <div>• Proyecciones basadas en meses previos a mayo NO reflejan el ajuste.</div>
+            <div>• La línea vertical violeta en mayo marca el inicio del ajuste.</div>
+            <div>• Variaciones vs año anterior serán atípicas desde mayo en adelante.</div>
+            <div>• Clientes con ajuste conocido: {MEPCO_CLIENTS_VISIBLE.join(", ")}.</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// BANNER "HOY DESTACA" — ranking inteligente de eventos
+// ═════════════════════════════════════════════════════════════════════════════
+
+function computeHighlights(C){
+  const items=[];
+  const now=new Date();
+
+  // 1. Alertas críticas (ocupación < 75%)
+  if(C.pctOcupacionTractos>0 && C.pctOcupacionTractos<75){
+    items.push({score:95,type:"danger",icon:Truck,title:"Ocupación de flota crítica",text:`Promedio ${C.pctOcupacionTractos.toFixed(1)}% (${C.tractosActivosMes} de ${C.totalTractocamiones} tractos) — meta >75%`});
+  }
+  if(C.pctOcupacionConductores>0 && C.pctOcupacionConductores<75){
+    items.push({score:90,type:"danger",icon:Users,title:"Ocupación de conductores baja",text:`${C.pctOcupacionConductores.toFixed(1)}% en expedición (${C.totalEnExpedicion} de ${C.totalContratados})`});
+  }
+
+  // 2. Pagos grandes próximos (>$100M o falta cobertura)
+  (C.compromisosProx||[]).forEach(r=>{
+    const dias=Math.ceil((r.fecha-now)/86400000);
+    if(r.falta>0 && r.monto>50000000){
+      items.push({score:85,type:"warning",icon:Calendar,title:`Pago grande en ${dias} día${dias!==1?"s":""}`,text:`${r.concepto.slice(0,50)}: ${fmtM(r.monto)} — falta ${fmtM(r.falta)}`});
+    } else if(r.monto>100000000 && dias<=3){
+      items.push({score:70,type:"info",icon:Calendar,title:`${r.concepto.slice(0,40)} próximo`,text:`${fmtM(r.monto)} el ${r.fecha.toLocaleDateString("es-CL",{day:"2-digit",month:"short"})} — ya cubierto`});
+    }
+  });
+
+  // 3. Variación ventas significativa
+  if(C.acumCorteAnterior>0){
+    const varCorte=pctChange(C.acumCorteActual,C.acumCorteAnterior);
+    if(Math.abs(varCorte)>=10){
+      items.push({
+        score:varCorte<0?80:65,
+        type:varCorte<0?"warning":"success",
+        icon:varCorte>0?TrendingUp:TrendingDown,
+        title:varCorte<0?"Brecha de ventas vs año anterior":"Crecimiento de ventas vs año anterior",
+        text:`Acumulado al ${now.getDate()}/${now.getMonth()+1}: ${fmtM(C.acumCorteActual)} vs ${fmtM(C.acumCorteAnterior)} en ${C.prevYear} (${fmtPct(varCorte)})`
+      });
+    }
+  }
+
+  // 4. DAP grandes próximos a vencer
+  (C.dapProximos||[]).slice(0,2).forEach(r=>{
+    if(r.monto>200000000){
+      const dias=Math.ceil((r.vencimiento-now)/86400000);
+      if(dias<=10){
+        items.push({score:60,type:"info",icon:PiggyBank,title:`DAP ${r.banco} vence en ${dias}d`,text:`${fmtM(r.monto)} al ${r.tasa||"—"} — ${r.vencimiento.toLocaleDateString("es-CL",{day:"2-digit",month:"short"})}`});
+      }
+    }
+  });
+
+  // 5. Top cliente crecimiento/caída
+  if(C.topClientes?.length>0){
+    const top=C.topClientes[0];
+    if(top.total>300000000){
+      items.push({score:45,type:"info",icon:Users,title:"Cliente principal del mes",text:`${top.name.slice(0,35)} — ${fmtM(top.total)} (${((top.total/C.totalMesActual)*100).toFixed(1)}% del mes)`});
+    }
+  }
+
+  // 6. Viajes ayer si bajó fuerte
+  if(C.viajesAyer>0 && C.viajesPorMes){
+    const promDiario=C.viajesMesActual/C.dayOfMonth;
+    if(C.viajesAyer<promDiario*0.7){
+      items.push({score:75,type:"warning",icon:TrendingDown,title:`Viajes bajos en ${C.lastFullDayLabel}`,text:`${C.viajesAyer} viajes vs promedio diario de ${Math.round(promDiario)} del mes`});
+    }
+  }
+
+  // 7. Impacto MEPCO vigente
+  if(C.mepcoActivo && C.impactoMepcoMes!==0){
+    items.push({
+      score:70,
+      type:C.impactoMepcoMes>0?"success":"info",
+      icon:Zap,
+      title:"Impacto MEPCO en facturación del mes",
+      text:`${C.impactoMepcoMes>0?"+":""}${fmtM(C.impactoMepcoMes)} vs proyección estacional base (sin ajuste)`
+    });
+  }
+
+  // 8. Días de caja si es crítico
+  if(C.diasCaja!==null && C.diasCaja<30){
+    items.push({
+      score:C.diasCaja<15?92:78,
+      type:C.diasCaja<15?"danger":"warning",
+      icon:Gauge,
+      title:`Días de caja bajos: ${C.diasCaja} días`,
+      text:`Caja ${fmtM(C.totalCaja)} cubre ~${C.diasCaja} días al ritmo de compromisos actuales`
+    });
+  }
+
+  return items.sort((a,b)=>b.score-a.score).slice(0,3);
+}
+
+function HighlightsBanner({C,T}){
+  const highlights=computeHighlights(C);
+  if(highlights.length===0)return null;
+  const styleByType={
+    danger:{bg:`linear-gradient(135deg, ${T.red}18, ${T.red}06)`,border:T.red,iconBg:`${T.red}22`},
+    warning:{bg:`linear-gradient(135deg, ${T.amber}14, ${T.amber}04)`,border:T.amber,iconBg:`${T.amber}22`},
+    success:{bg:`linear-gradient(135deg, ${T.green}14, ${T.green}04)`,border:T.green,iconBg:`${T.green}22`},
+    info:{bg:`linear-gradient(135deg, ${T.accent}14, ${T.accent}04)`,border:T.accent,iconBg:`${T.accent}22`},
+  };
+  return(
+    <div style={{background:T.card,borderRadius:12,padding:"14px 16px",border:`1px solid ${T.border}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+        <Sparkles size={14} color={T.violet}/>
+        <span style={{fontSize:12,fontWeight:700,color:T.tx,letterSpacing:0.3}}>Hoy destaca</span>
+        <span style={{fontSize:10,color:T.txD,fontStyle:"italic"}}>ordenado por relevancia</span>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {highlights.map((h,i)=>{const s=styleByType[h.type];return(
+          <div key={i} style={{background:s.bg,border:`1px solid ${s.border}33`,borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"flex-start",gap:10}}>
+            <div style={{background:s.iconBg,borderRadius:6,padding:5,display:"flex",flexShrink:0}}><h.icon size={14} color={s.border}/></div>
+            <div style={{minWidth:0,flex:1}}>
+              <div style={{fontSize:12,fontWeight:600,color:T.tx,marginBottom:2}}>{h.title}</div>
+              <div style={{fontSize:11,color:T.txM,lineHeight:1.4}}>{h.text}</div>
+            </div>
+          </div>
+        );})}
+      </div>
+    </div>
+  );
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SEMÁFORO EJECUTIVO
+// ═════════════════════════════════════════════════════════════════════════════
+
+function computeSemaforo(C){
+  // 3 señales con peso igual
+  const signals=[];
+
+  // 1. Cobertura de caja (días de caja)
+  if(C.diasCaja!==null){
+    let s;
+    if(C.diasCaja>=45) s={level:"verde",text:`Caja cubre ${C.diasCaja} días`};
+    else if(C.diasCaja>=20) s={level:"amarillo",text:`Caja cubre ${C.diasCaja} días`};
+    else s={level:"rojo",text:`Caja solo cubre ${C.diasCaja} días`};
+    signals.push(s);
+  }
+
+  // 2. Ventas acumuladas vs año anterior (usando corte al día actual para comparación justa)
+  if(C.acumCorteAnterior>0){
+    const varPct=pctChange(C.acumCorteActual,C.acumCorteAnterior);
+    let s;
+    if(varPct>=0) s={level:"verde",text:`Ventas ${fmtPct(varPct)} vs ${C.prevYear}`};
+    else if(varPct>=-10) s={level:"amarillo",text:`Ventas ${fmtPct(varPct)} vs ${C.prevYear}`};
+    else s={level:"rojo",text:`Ventas ${fmtPct(varPct)} vs ${C.prevYear}`};
+    signals.push(s);
+  }
+
+  // 3. Ocupación flota (promedio mes)
+  if(C.pctOcupacionTractos>0){
+    let s;
+    if(C.pctOcupacionTractos>=85) s={level:"verde",text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%`};
+    else if(C.pctOcupacionTractos>=75) s={level:"amarillo",text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%`};
+    else s={level:"rojo",text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%`};
+    signals.push(s);
+  }
+
+  // Nivel global: peor señal domina
+  const levels=signals.map(s=>s.level);
+  let global="verde";
+  if(levels.includes("rojo")) global="rojo";
+  else if(levels.includes("amarillo")) global="amarillo";
+
+  const labels={verde:"Todo en orden",amarillo:"Requiere atención",rojo:"Acción urgente"};
+  return {global,signals,label:labels[global]};
+}
+
+function SemaforoEjecutivo({C,T}){
+  const sem=computeSemaforo(C);
+  if(sem.signals.length===0)return null;
+  const colorMap={verde:{c:T.green,bg:T.greenBg,icon:ShieldCheck},amarillo:{c:T.amber,bg:T.amberBg,icon:Shield},rojo:{c:T.red,bg:T.redBg,icon:ShieldAlert}};
+  const g=colorMap[sem.global];
+  const Icon=g.icon;
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,background:g.bg,border:`1px solid ${g.c}33`,minWidth:0}}>
+      <Icon size={20} color={g.c} style={{flexShrink:0}}/>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:12,fontWeight:700,color:g.c,letterSpacing:0.3}}>{sem.label}</div>
+        <div style={{display:"flex",gap:8,marginTop:2,flexWrap:"wrap"}}>
+          {sem.signals.map((s,i)=>{const sc=colorMap[s.level];return(
+            <span key={i} style={{fontSize:10,color:T.txM,display:"flex",alignItems:"center",gap:4}}>
+              <CircleDot size={8} color={sc.c}/>{s.text}
+            </span>
+          );})}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// APP PRINCIPAL
+// ═════════════════════════════════════════════════════════════════════════════
+
 export default function App(){
   const[dark,setDark]=useState(()=>{try{return localStorage.getItem("cm-theme")!=="light";}catch{return true;}});
   const[tab,setTab]=useState("home");const[data,setData]=useState({});const[loading,setLoading]=useState(true);const[lastUpdate,setLastUpdate]=useState(null);const[mobileMenu,setMobileMenu]=useState(false);
+  const[projectionMode,setProjectionMode]=useState("seasonal");
   const T=dark?themes.dark:themes.light;
   const toggleTheme=()=>{setDark(d=>{const n=!d;try{localStorage.setItem("cm-theme",n?"dark":"light");}catch{}return n;});};
 
@@ -101,7 +398,7 @@ export default function App(){
     if(!data.ventas)return null;
     const now=new Date(),curMonth=now.getMonth(),curYear=now.getFullYear();
 
-    // VENTAS
+    // ══════════ VENTAS ══════════
     const ventasRows=(data.ventas||[]).map(r=>{const d=parseDate(r.FECHA||r.Fecha||r.fecha);return{...r,_date:d,_neto:parseNum(r.NETO||r.Neto||r.neto)};}).filter(r=>r._date);
     const ventasMesActual=ventasRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===curYear);
     const ventasMesAnterior=ventasRows.filter(r=>{const pm=curMonth===0?11:curMonth-1;const py=curMonth===0?curYear-1:curYear;return r._date.getMonth()===pm&&r._date.getFullYear()===py;});
@@ -136,11 +433,126 @@ export default function App(){
       neto: r._neto,
     }));
 
-    // VIAJES
+    // ══════════ PROYECCIÓN ESTACIONAL ══════════
+    // Lógica idéntica al dashboard de ventas
+    const monthsWithData=ventasPorMesComparado.map((m,i)=>m.actual>0?i+1:0).filter(m=>m>0);
+    const lastDataMonth=monthsWithData[monthsWithData.length-1]||0;
+    const monthInProgress=lastDataMonth===curMonth+1;
+    const closedMonths=monthInProgress?monthsWithData.slice(0,-1):monthsWithData;
+    const openMonth=monthInProgress?lastDataMonth:null;
+    const ytdClosed=closedMonths.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.actual||0),0);
+    const ytdOpen=openMonth?(ventasPorMesComparado[openMonth-1]?.actual||0):0;
+    const ytdTotal=ytdClosed+ytdOpen;
+
+    // Lineal
+    const allMonthsCount=monthsWithData.length;
+    const projLinear=allMonthsCount>0?(ytdTotal/allMonthsCount)*12:0;
+
+    // Prorrateada
+    let projProrata=0;
+    if(closedMonths.length>0){
+      const avgClosed=ytdClosed/closedMonths.length;
+      let openProjected=ytdOpen;
+      if(openMonth){
+        const elapsed=businessDaysElapsed(curYear,openMonth,now);
+        const total=businessDaysInMonth(curYear,openMonth);
+        if(elapsed>0)openProjected=ytdOpen*(total/elapsed);
+      }
+      const remainingMonths=12-allMonthsCount;
+      projProrata=ytdClosed+openProjected+(avgClosed*remainingMonths);
+    }else if(openMonth){
+      const elapsed=businessDaysElapsed(curYear,openMonth,now);
+      const total=businessDaysInMonth(curYear,openMonth);
+      const openProjected=elapsed>0?ytdOpen*(total/elapsed):ytdOpen;
+      projProrata=openProjected*12;
+    }
+
+    // Estacional (basada en patrón año anterior)
+    let projSeasonal=0;
+    const totalPrev=ventasAnoAnterior;
+    if(totalPrev>0){
+      const weights=ventasPorMesComparado.map(m=>m.anterior/totalPrev);
+      const weightsClosed=closedMonths.reduce((s,m)=>s+weights[m-1],0);
+      if(closedMonths.length>0 && weightsClosed>0){
+        const annualFromClosed=ytdClosed/weightsClosed;
+        let openContribution=ytdOpen;
+        if(openMonth){
+          const weightOpen=weights[openMonth-1];
+          const expectedOpen=annualFromClosed*weightOpen;
+          const elapsed=businessDaysElapsed(curYear,openMonth,now);
+          const total=businessDaysInMonth(curYear,openMonth);
+          const openProrata=elapsed>0?ytdOpen*(total/elapsed):ytdOpen;
+          openContribution=Math.max(openProrata,expectedOpen);
+        }
+        const futureMonths=[];
+        for(let m=1;m<=12;m++){
+          if(!closedMonths.includes(m)&&m!==openMonth)futureMonths.push(m);
+        }
+        const futureContribution=futureMonths.reduce((s,m)=>s+(annualFromClosed*weights[m-1]),0);
+        projSeasonal=ytdClosed+openContribution+futureContribution;
+      }
+    }
+    if(projSeasonal===0 && projProrata>0)projSeasonal=projProrata;
+
+    const projections={
+      monthInProgress,openMonth,closedMonthsCount:closedMonths.length,
+      ytdClosed,ytdOpen,ytdTotal,
+      linear:Math.round(projLinear),prorata:Math.round(projProrata),seasonal:Math.round(projSeasonal),
+      businessDaysElapsed:openMonth?businessDaysElapsed(curYear,openMonth,now):0,
+      businessDaysTotal:openMonth?businessDaysInMonth(curYear,openMonth):0,
+    };
+
+    // ══════════ PROYECCIÓN POR MES (para graficar futuro con colores distintos) ══════════
+    // Para meses sin datos reales, usar weights del año anterior × proyección estacional
+    const ventasPorMesConProyeccion=ventasPorMesComparado.map((m,i)=>{
+      const mNum=i+1;
+      if(m.actual>0 && mNum!==openMonth){
+        // Mes cerrado con datos reales
+        return {...m,proyectado:null,tipo:"real"};
+      }else if(mNum===openMonth){
+        // Mes en curso: mostrar real + proyección parcial
+        const weight=totalPrev>0?m.anterior/totalPrev:(1/12);
+        const expected=projSeasonal*weight;
+        const faltante=Math.max(0,expected-m.actual);
+        return {...m,proyectado:faltante,tipo:"parcial"};
+      }else{
+        // Mes futuro: proyección estacional
+        const weight=totalPrev>0?m.anterior/totalPrev:(1/12);
+        const proy=projSeasonal*weight;
+        return {...m,actual:0,proyectado:proy,tipo:"futuro"};
+      }
+    });
+
+    // ══════════ IMPACTO MEPCO ══════════
+    // Cálculo: desde mayo, diferencia entre facturación real y proyección estacional base (con patrón de año anterior y ventas ene-abr reales)
+    const mepcoActivo = curYear>2026 || (curYear===2026 && curMonth+1>=MEPCO_ADJUSTMENT_MONTH);
+    let impactoMepcoAcum=0;
+    let impactoMepcoMes=0;
+    // Base "sin ajuste": promedio ene-abr del año actual aplicando pesos estacionales del año anterior
+    const mesesPreMepco=[1,2,3,4].filter(m=>monthsWithData.includes(m));
+    const ventasPreMepco=mesesPreMepco.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.actual||0),0);
+    if(totalPrev>0 && mesesPreMepco.length>0 && mepcoActivo){
+      const weightsPreMepco=mesesPreMepco.reduce((s,m)=>s+((ventasPorMesComparado[m-1]?.anterior||0)/totalPrev),0);
+      if(weightsPreMepco>0){
+        const baseAnualSinMepco=ventasPreMepco/weightsPreMepco;
+        // Para cada mes desde mayo con datos, calcular esperado vs real
+        for(let m=MEPCO_ADJUSTMENT_MONTH;m<=12;m++){
+          if(monthsWithData.includes(m)){
+            const weight=(ventasPorMesComparado[m-1]?.anterior||0)/totalPrev;
+            const esperado=baseAnualSinMepco*weight;
+            const real=ventasPorMesComparado[m-1]?.actual||0;
+            const diff=real-esperado;
+            impactoMepcoAcum+=diff;
+            if(m===curMonth+1)impactoMepcoMes=diff;
+          }
+        }
+      }
+    }
+
+    // ══════════ VIAJES ══════════
     const viajesRows=(data.viajes||[]).map(r=>{const d=parseDate(r.fechainicio||r.FechaInicio||r.fecha);return{...r,_date:d,_cliente:r.Cliente||r.cliente||"",_equipo:r.tipoequipo||r.TipoEquipo||""};}).filter(r=>r._date);
     const viajesMesActual=viajesRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===curYear);
     const viajesMesAnterior=viajesRows.filter(r=>{const pm=curMonth===0?11:curMonth-1;const py=curMonth===0?curYear-1:curYear;return r._date.getMonth()===pm&&r._date.getFullYear()===py;});
-    // CAMBIO 1: Corte al día = último día con datos cargados (no hoy)
     const maxDayWithData=viajesMesActual.length>0?Math.max(...viajesMesActual.map(r=>r._date.getDate())):now.getDate();
     const dayOfMonth=maxDayWithData;
     const viajesCorteActual=viajesMesActual.filter(r=>r._date.getDate()<=dayOfMonth).length;
@@ -151,7 +563,7 @@ export default function App(){
     const equipoMap={};viajesMesActual.forEach(r=>{const e=r._equipo||"Sin tipo";equipoMap[e]=(equipoMap[e]||0)+1;});
     const viajesPorEquipo=Object.entries(equipoMap).sort((a,b)=>b[1]-a[1]).map(([name,count])=>({name:name.length>25?name.slice(0,22)+"...":name,count}));
 
-    // CONDUCTORES
+    // ══════════ CONDUCTORES ══════════
     const contratadosSet=new Set();(data.conductoresActivos||[]).forEach(r=>{const n=normName(r.personal||r.Personal||"");if(n)contratadosSet.add(n);});
     const totalContratados=contratadosSet.size;
     const enProcesoNames=new Set();(data.expediciones||[]).forEach(r=>{const estado=(r.estado||r.Estado||"").trim();const conductor=(r.conductor||r.Conductor||"").trim();if(estado==="En proceso"&&conductor!==COMODIN_CONDUCTOR){enProcesoNames.add(normName(conductor));}});
@@ -160,7 +572,7 @@ export default function App(){
     const totalNoActivos=totalContratados-totalEnExpedicion;
     const pctOcupacionConductores=totalContratados>0?(totalEnExpedicion/totalContratados)*100:0;
 
-    // TRACTOS
+    // ══════════ TRACTOS ══════════
     const flotaRows=(data.flotaViajes||[]).map(r=>({...r,_date:parseDate(r.Fecha||r.fecha||r.fechainicio),_km:parseNum(r.Kilometro||r.kilometro||r.km),_tracto:(r.Tracto||r.tracto||"").trim(),_origen:r.Origen||r.origen||"",_destino:r.Destino||r.destino||"",_cliente:r.Cliente||r.cliente||""})).filter(r=>r._date);
     const flotaMesActual=flotaRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===curYear);
     const kmMesActual=flotaMesActual.reduce((s,r)=>s+r._km,0);
@@ -176,7 +588,6 @@ export default function App(){
 
     const tractosAyerSet=new Set();if(lastFullDayDate){flotaRows.forEach(r=>{if(r._date.toISOString().slice(0,10)===lastFullDay&&r._tracto&&r._tracto!==COMODIN_TRACTO)tractosAyerSet.add(r._tracto);});}
     const tractosActivosAyer=tractosAyerSet.size;
-    // CAMBIO 2: Tractos activos mes = promedio diario de tractos únicos por día
     const tractosMesSet=new Set();flotaMesActual.forEach(r=>{if(r._tracto&&r._tracto!==COMODIN_TRACTO)tractosMesSet.add(r._tracto);});
     const tractosUnicosMes=tractosMesSet.size;
     const tractosPorDia={};flotaMesActual.forEach(r=>{if(r._tracto&&r._tracto!==COMODIN_TRACTO){const dayKey=r._date.getDate();if(!tractosPorDia[dayKey])tractosPorDia[dayKey]=new Set();tractosPorDia[dayKey].add(r._tracto);}});
@@ -187,7 +598,7 @@ export default function App(){
     const pctOcupacionTractos=totalTractocamiones>0?(tractosActivosMes/totalTractocamiones)*100:0;
     const pctOcupacionTractosAyer=totalTractocamiones>0?(tractosActivosAyer/totalTractocamiones)*100:0;
 
-    // FINANZAS
+    // ══════════ FINANZAS ══════════
     const bancosRows=(data.finBancos||[]).filter(r=>r.Banco||r.banco);const saldosBancos={};bancosRows.forEach(r=>{const banco=r.Banco||r.banco;const sf=parseNum(r["Saldo Final"]||r.saldo_final||r.SaldoFinal);if(sf>0)saldosBancos[banco]=sf;});const totalCaja=Object.values(saldosBancos).reduce((s,v)=>s+v,0);
     const dapRows=(data.finDAP||[]).filter(r=>{const v=(r.Vigente||r.vigente||"").toString().toLowerCase();return v==="si"||v==="sí"||v==="yes";});
     const getDapType=(r)=>{const t=(r.Tipo||r.tipo||"").toString().toLowerCase().trim();if(t.includes("credito")||t.includes("crédito"))return"credito";if(t.includes("inversion")||t.includes("inversión"))return"inversion";return"trabajo";};
@@ -200,7 +611,17 @@ export default function App(){
     const nextWeek=new Date(now);nextWeek.setDate(nextWeek.getDate()+7);const compromisosProx=calRows.filter(r=>r.fecha>=now&&r.fecha<=nextWeek).sort((a,b)=>a.fecha-b.fecha);const totalCompromisosProx=compromisosProx.reduce((s,r)=>s+r.monto,0);
     const compromisosMes=calRows.filter(r=>r.fecha&&r.fecha.getMonth()===curMonth&&r.fecha.getFullYear()===curYear);const totalCompromisosMes=compromisosMes.reduce((s,r)=>s+r.monto,0);const totalGuardadoMes=compromisosMes.reduce((s,r)=>s+r.guardado,0);
 
-    // ALERTAS
+    // ══════════ DÍAS DE CAJA (usa compromisos próx 60 días como quemado) ══════════
+    const next60=new Date(now);next60.setDate(next60.getDate()+60);
+    const compromisos60d=calRows.filter(r=>r.fecha>=now&&r.fecha<=next60);
+    const burnDiario=compromisos60d.reduce((s,r)=>s+r.monto,0)/60;
+    const diasCaja=burnDiario>0?Math.round(totalCaja/burnDiario):null;
+
+    // ══════════ MARGEN MES ESTIMADO ══════════
+    // Facturación mes actual - (compromisos del mes + cuota leasing c/IVA + cuota crédito)
+    // Nota: es solo un proxy, no es contable.
+
+    // ══════════ ALERTAS ══════════
     const alertas=[];
     calRows.filter(r=>r.falta>0&&r.fecha>=now&&r.fecha<=nextWeek).forEach(r=>{alertas.push({type:"warning",icon:Calendar,msg:`${r.concepto}: falta ${fmtM(r.falta)} para el ${r.fecha.toLocaleDateString("es-CL")}`});});
     dapProximos.filter(r=>r.vencimiento<=nextWeek).forEach(r=>{alertas.push({type:"info",icon:PiggyBank,msg:`DAP ${r.banco} por ${fmtM(r.monto)} vence el ${r.vencimiento.toLocaleDateString("es-CL")}`});});
@@ -208,8 +629,9 @@ export default function App(){
     if(totalContratados>0&&pctOcupacionConductores<75){alertas.push({type:"warning",icon:Users,msg:`Ocupación conductores: ${pctOcupacionConductores.toFixed(1)}% — ${totalEnExpedicion} de ${totalContratados} en expedición`});}
     if(totalTractocamiones>0&&pctOcupacionTractos<75){alertas.push({type:"warning",icon:Truck,msg:`Ocupación tractos prom. diario: ${pctOcupacionTractos.toFixed(1)}% — ${tractosActivosMes} de ${totalTractocamiones} (prom. ${diasConDatosTractos} días)`});}
     if(totalTractocamiones>0&&pctOcupacionTractosAyer<75&&lastFullDay){alertas.push({type:"danger",icon:Truck,msg:`Ocupación tractos ${lastFullDayLabel}: ${pctOcupacionTractosAyer.toFixed(1)}% — ${tractosActivosAyer} de ${totalTractocamiones}`});}
+    if(diasCaja!==null && diasCaja<20){alertas.push({type:"danger",icon:Gauge,msg:`Días de caja críticos: ${diasCaja} días con el ritmo actual de compromisos`});}
 
-    // LEASING
+    // ══════════ LEASING ══════════
     const leasingDet=(data.leasingDetalle||[]).filter(r=>(r.Estado||r.estado||"").toUpperCase()==="ACTIVO");const leasingContratosActivos=leasingDet.length;const leasingTractosTotal=leasingDet.reduce((s,r)=>s+parseNum(r["N Tractos"]||r.Tractos||r.tractos),0);
     const lrParsed=data.leasingResumen||{emisores:[],totalRow:null,proxCuotas:[],proyeccion:[],refs:{}};const leasingEmisores=lrParsed.emisores;const leasingTotalRow=lrParsed.totalRow;
     const leasingTotalCuotaIVA=leasingTotalRow?.cuotaIVA||leasingEmisores.reduce((s,e)=>s+e.cuotaIVA,0);const leasingTotalCuotaSinIVA=leasingTotalRow?.cuotaCLP||leasingEmisores.reduce((s,e)=>s+e.cuotaCLP,0);const leasingDeudaTotal=leasingTotalRow?.deudaCLP||leasingEmisores.reduce((s,e)=>s+e.deudaCLP,0);const leasingTotalUF=leasingTotalRow?.cuotaUF||leasingEmisores.reduce((s,e)=>s+e.cuotaUF,0);
@@ -218,14 +640,19 @@ export default function App(){
     const cuotaDia5UF=dia5.reduce((s,r)=>s+parseNum(r["Cuota UF\nTotal Grupo"]||r["Cuota UF Total Grupo"]),0);const cuotaDia15UF=dia15.reduce((s,r)=>s+parseNum(r["Cuota UF\nTotal Grupo"]||r["Cuota UF Total Grupo"]),0);
     leasingProxCuotas.filter(r=>r.dias<=5&&r.dias>=0).forEach(r=>{alertas.push({type:"warning",icon:Truck,msg:`Leasing: cuota de ${fmtM(r.cuotaIVA)} c/IVA vence en ${r.dias} día${r.dias!==1?"s":""}`});});
 
-    // CREDITO
+    // ══════════ CREDITO ══════════
     const creditoRows=(data.credito||[]).map(r=>({cuota:parseNum(r["N° Cuota"]||r.Cuota||r.cuota),fecha:r["Fecha Vencimiento"]||r.Fecha||r.fecha||"",capital:parseNum(r["Amortización Capital"]||r["Amortizacion Capital"]||r.capital),interes:parseNum(r["Monto Interés"]||r["Monto Interes"]||r.interes),valorCuota:parseNum(r["Valor Cuota"]||r.ValorCuota||r.valor_cuota),saldo:parseNum(r["Saldo Insoluto"]||r.SaldoInsoluto||r.saldo)})).filter(r=>r.cuota>0);
     const creditoProxima=creditoRows.find(r=>{const fd=parseDate(r.fecha);return fd&&fd>=now&&r.valorCuota>0;});const creditoCuotasFuturas=creditoRows.filter(r=>{const fd=parseDate(r.fecha);return fd&&fd>=now;});
     const creditoSaldoActual=creditoCuotasFuturas.length>0?creditoCuotasFuturas[0].saldo:(creditoRows.length>0?creditoRows[creditoRows.length-1].saldo:0);const creditoDeudaTotal=creditoCuotasFuturas.reduce((s,r)=>s+r.valorCuota,0);const creditoValorCuota=creditoRows.find(r=>r.valorCuota>0)?.valorCuota||0;const creditoTotalCuotas=creditoRows.length;
     const creditoCuotasPagadas=creditoRows.filter(r=>{const fd=parseDate(r.fecha);return fd&&fd<now;}).length;const creditoCuotasPorPagar=creditoTotalCuotas-creditoCuotasPagadas;const creditoTotalIntereses=creditoRows.reduce((s,r)=>s+r.interes,0);const creditoTotalCapital=creditoRows.reduce((s,r)=>s+r.capital,0);const creditoInteresesPendientes=creditoCuotasFuturas.reduce((s,r)=>s+r.interes,0);
     if(creditoProxima){const fd=parseDate(creditoProxima.fecha);if(fd){const dc=Math.ceil((fd-now)/86400000);if(dc<=7&&dc>=0){alertas.push({type:"info",icon:CreditCard,msg:`Crédito Itaú: cuota #${creditoProxima.cuota} de ${fmtM(creditoProxima.valorCuota)} vence en ${dc} días`});}}}
 
-    return{totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos};
+    // Margen mes estimado (proxy simple)
+    const leasingMesEstimado=leasingTotalCuotaIVA;
+    const creditoMesEstimado=creditoValorCuota;
+    const margenMesEstimado=totalMesActual-(totalCompromisosMes+leasingMesEstimado+creditoMesEstimado);
+
+    return{totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,diasCaja,burnDiario,margenMesEstimado,leasingMesEstimado,creditoMesEstimado};
   },[data]);
 
   if(loading&&!computed){return(<div style={{background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:T.tx,fontFamily:"'Inter','SF Pro Display',system-ui,sans-serif"}}><div style={{textAlign:"center"}}><RefreshCw size={32} color={T.accent} style={{animation:"spin 1s linear infinite"}}/><p style={{marginTop:16,color:T.txM}}>Cargando datos...</p><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div></div>);}
@@ -236,7 +663,13 @@ export default function App(){
     <header style={{background:T.bg2,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <button onClick={()=>setMobileMenu(!mobileMenu)} style={{background:"none",border:"none",cursor:"pointer",display:"none",color:T.tx,padding:4}} className="mobile-menu-btn">{mobileMenu?<X size={20}/>:<Menu size={20}/>}</button>
-        <div><div style={{fontSize:16,fontWeight:700,color:T.tx,letterSpacing:-0.3}}>Centro de Mando</div><div style={{fontSize:11,color:T.txD}}>Transportes Bello e Hijos Ltda.</div></div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:32,height:32,borderRadius:8,background:`linear-gradient(135deg, ${T.accent}, ${T.violet})`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,color:"#fff",fontSize:14,boxShadow:`0 4px 12px ${T.accent}44`}}>CM</div>
+          <div>
+            <div style={{fontSize:15,fontWeight:700,color:T.tx,letterSpacing:-0.3}}>Centro de Mando — Don Luis Bello</div>
+            <div style={{fontSize:10,color:T.txD}}>Transportes Bello e Hijos Ltda.</div>
+          </div>
+        </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         {lastUpdate&&<span style={{fontSize:10,color:T.txD}}>{lastUpdate.toLocaleTimeString("es-CL",{hour:"2-digit",minute:"2-digit"})}</span>}
@@ -251,7 +684,7 @@ export default function App(){
       {mobileMenu&&(<div className="mobile-nav-overlay" style={{position:"fixed",top:52,left:0,right:0,bottom:0,zIndex:99,background:"rgba(0,0,0,0.5)"}} onClick={()=>setMobileMenu(false)}><div style={{width:220,background:T.bg2,height:"100%",padding:"16px 8px",display:"flex",flexDirection:"column",gap:2}} onClick={e=>e.stopPropagation()}>{TABS.map(t=>{const active=tab===t.id;return(<button key={t.id} onClick={()=>{setTab(t.id);setMobileMenu(false);}} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderRadius:10,border:"none",cursor:"pointer",width:"100%",textAlign:"left",background:active?T.accentBg:"transparent",color:active?T.accent:T.txM,fontWeight:active?600:400,fontSize:14}}><t.icon size={18}/> {t.label}{t.id==="alertas"&&activeAlerts>0&&(<span style={{marginLeft:"auto",background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"2px 8px"}}>{activeAlerts}</span>)}</button>);})}</div></div>)}
       <main style={{flex:1,padding:"20px 24px",maxWidth:1200,overflowX:"hidden"}}>
         {tab==="home"&&<HomeView C={C} T={T} setTab={setTab}/>}
-        {tab==="ventas"&&<VentasView C={C} T={T}/>}
+        {tab==="ventas"&&<VentasView C={C} T={T} projectionMode={projectionMode} setProjectionMode={setProjectionMode}/>}
         {tab==="operaciones"&&<OperacionesView C={C} T={T}/>}
         {tab==="finanzas"&&<FinanzasView C={C} T={T}/>}
         {tab==="leasing"&&<LeasingView C={C} T={T}/>}
@@ -264,26 +697,107 @@ export default function App(){
   </div>);
 }
 
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HOME VIEW — la vista principal de Don Luis
+// ═════════════════════════════════════════════════════════════════════════════
+
 function HomeView({C,T,setTab}){
   const mesLabel=MESES_FULL[C.curMonth]+" "+C.curYear;
+  const saludo=getSaludo();
+  const fecha=getFechaLarga();
+
+  // Datos del chart con proyección estacional
+  const chartData=(C.ventasPorMesConProyeccion||[]).map((m,i)=>({
+    mes:MESES[i],
+    real:m.actual>0?m.actual/1e6:null,
+    proyectado:m.proyectado!==null?m.proyectado/1e6:null,
+    anterior:m.anterior>0?m.anterior/1e6:null,
+  }));
+
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
-    <div><h1 style={{fontSize:20,fontWeight:700,color:T.tx,marginBottom:2}}>Buenos días</h1><p style={{fontSize:13,color:T.txM}}>{mesLabel} — Resumen ejecutivo</p></div>
+
+    {/* Header con saludo + semáforo ejecutivo */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+      <div>
+        <div style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:999,background:T.violetBg,border:`1px solid ${T.violet}33`,marginBottom:10}}>
+          <Sparkles size={11} color={T.violet}/>
+          <span style={{fontSize:10,color:T.violet,fontWeight:700,letterSpacing:0.8,textTransform:"uppercase"}}>Resumen ejecutivo</span>
+        </div>
+        <h1 style={{fontSize:24,fontWeight:800,color:T.tx,marginBottom:3,letterSpacing:-0.8}}>{saludo}, Don Luis</h1>
+        <p style={{fontSize:13,color:T.txM,textTransform:"capitalize"}}>{fecha}</p>
+      </div>
+      <SemaforoEjecutivo C={C} T={T}/>
+    </div>
+
+    {/* Banner MEPCO */}
+    <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1} compact={true}/>
+
+    {/* Banner Hoy Destaca */}
+    <HighlightsBanner C={C} T={T}/>
+
+    {/* KPIs principales — fila 1 */}
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
       <KpiCard icon={DollarSign} label="Facturación mes" value={fmtM(C.totalMesActual)} T={T} sub={C.totalMesAnterior>0?fmtPct(pctChange(C.totalMesActual,C.totalMesAnterior))+" vs mes ant.":undefined} color={T.accent} colorBg={T.accentBg}/>
       <KpiCard icon={Truck} label="Viajes mes" value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={`Corte día ${C.dayOfMonth}: ${C.viajesCorteActual} vs ${C.viajesCorteAnterior}`} color={T.green} colorBg={T.greenBg}/>
       <KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} sub={Object.keys(C.saldosBancos||{}).length+" bancos"} color={T.teal} colorBg={T.tealBg}/>
-      <KpiCard icon={Calendar} label="Pagos próx. 7 días" value={fmtM(C.totalCompromisosProx)} T={T} sub={C.compromisosProx?.length+" compromisos"} color={T.amber} colorBg={T.amberBg}/>
+      <KpiCard icon={Gauge} label="Días de caja" value={C.diasCaja!==null?`${C.diasCaja} días`:"—"} T={T} sub={C.burnDiario>0?`Quemado diario: ${fmtM(C.burnDiario)}`:"Sin compromisos"} color={C.diasCaja===null?T.txM:C.diasCaja>=45?T.green:C.diasCaja>=20?T.amber:T.red} colorBg={C.diasCaja===null?T.bg3:C.diasCaja>=45?T.greenBg:C.diasCaja>=20?T.amberBg:T.redBg}/>
       <KpiCard icon={PiggyBank} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.purple} colorBg={T.purpleBg}/>
     </div>
+
+    {/* KPIs fila 2 — incluye impacto MEPCO y margen */}
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-      <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA)+" c/IVA"} T={T} sub={`${C.leasingContratosActivos} contratos · ${C.leasingTractosTotal} tractos`} color={T.red} colorBg={T.redBg}/>
+      <KpiCard
+        icon={Zap}
+        label="Impacto MEPCO mes"
+        value={C.impactoMepcoMes===0?"—":(C.impactoMepcoMes>0?"+":"")+fmtM(C.impactoMepcoMes)}
+        T={T}
+        sub={C.mepcoActivo?(C.impactoMepcoAcum!==0?`Acum. desde mayo: ${C.impactoMepcoAcum>0?"+":""}${fmtM(C.impactoMepcoAcum)}`:"Sin efecto medible aún"):"Pendiente (desde mayo 2026)"}
+        color={T.amber} colorBg={T.amberBg}
+        badge={C.mepcoActivo?"VIGENTE":"PREVIO"}
+      />
+      <KpiCard icon={BarChart3} label="Margen estimado mes" value={fmtM(C.margenMesEstimado)} T={T} sub={`Fact. ${fmtM(C.totalMesActual)} − costos fijos`} color={C.margenMesEstimado>=0?T.green:T.red} colorBg={C.margenMesEstimado>=0?T.greenBg:T.redBg}/>
+      <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA)+" c/IVA"} T={T} sub={`${C.leasingContratosActivos} contratos · ${C.leasingTractosTotal} tractos`} color={T.violet} colorBg={T.violetBg}/>
       <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoDeudaTotal)} T={T} sub={C.creditoProxima?`Próxima: ${fmtM(C.creditoProxima.valorCuota)} · cuota #${C.creditoProxima.cuota}`:"En gracia"} color={T.red} colorBg={T.redBg}/>
-      <KpiCard icon={TrendingDown} label="Deuda total" value={fmtM(C.leasingDeudaTotal+C.creditoDeudaTotal)} T={T} sub={`Leasing ${fmtM(C.leasingDeudaTotal)} + Crédito ${fmtM(C.creditoDeudaTotal)}`} color={T.red} colorBg={T.redBg}/>
     </div>
-    {C.alertas?.length>0&&(<div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:12,padding:"12px 16px"}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><AlertTriangle size={14} color={T.red}/><span style={{fontSize:12,fontWeight:600,color:T.red}}>Alertas ({C.alertas.length})</span><button onClick={()=>setTab("alertas")} style={{marginLeft:"auto",background:"none",border:"none",color:T.accent,fontSize:11,cursor:"pointer",fontWeight:600}}>Ver todas</button></div>{C.alertas.slice(0,3).map((a,i)=>(<div key={i} style={{fontSize:12,color:T.tx,padding:"3px 0",display:"flex",alignItems:"center",gap:6}}><a.icon size={12} color={a.type==="danger"?T.red:a.type==="warning"?T.amber:T.accent}/>{a.msg}</div>))}</div>)}
+
+    {/* Gráfico principal con proyección estacional + línea MEPCO */}
+    <SectionCard
+      title={`Facturación mensual ${C.curYear} — con proyección estacional`}
+      icon={BarChart3} T={T} color={T.accent}
+      action={<span style={{fontSize:10,color:T.txD,fontStyle:"italic"}}>Proyección anual: <strong style={{color:T.amber}}>{fmtM(C.projections?.seasonal||0)}</strong></span>}
+    >
+      <ResponsiveContainer width="100%" height={260}>
+        <ComposedChart data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
+          <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v.toFixed(0)}M`} width={55}/>
+          <Tooltip content={<ChartTooltip T={T}/>} formatter={(v)=>v!=null?`$${v.toFixed(1)}M`:"-"}/>
+          <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
+          <Bar dataKey="anterior" fill={T.txD} opacity={0.4} radius={[3,3,0,0]} name={String(C.prevYear)}/>
+          <Bar dataKey="real" fill={T.accent} radius={[3,3,0,0]} name={`${C.curYear} Real`}/>
+          <Bar dataKey="proyectado" fill={T.amber} radius={[3,3,0,0]} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" name={`${C.curYear} Proyectado`}/>
+          {C.curYear===2026 && (
+            <ReferenceLine x={MESES[MEPCO_ADJUSTMENT_MONTH-1]} stroke={T.violet} strokeDasharray="4 3" strokeWidth={2} label={{value:"⚡ MEPCO",position:"top",fill:T.violet,fontSize:10,fontWeight:700}}/>
+          )}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </SectionCard>
+
+    {/* Alertas */}
+    {C.alertas?.length>0&&(
+      <div style={{background:T.redBg,border:`1px solid ${T.red}33`,borderRadius:12,padding:"12px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+          <AlertTriangle size={14} color={T.red}/>
+          <span style={{fontSize:12,fontWeight:600,color:T.red}}>Alertas ({C.alertas.length})</span>
+          <button onClick={()=>setTab("alertas")} style={{marginLeft:"auto",background:"none",border:"none",color:T.accent,fontSize:11,cursor:"pointer",fontWeight:600}}>Ver todas</button>
+        </div>
+        {C.alertas.slice(0,3).map((a,i)=>(<div key={i} style={{fontSize:12,color:T.tx,padding:"3px 0",display:"flex",alignItems:"center",gap:6}}><a.icon size={12} color={a.type==="danger"?T.red:a.type==="warning"?T.amber:T.accent}/>{a.msg}</div>))}
+      </div>
+    )}
+
+    {/* Grid de tarjetas secundarias */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
-      <SectionCard title="Facturación mensual" icon={BarChart3} T={T} color={T.accent}><ResponsiveContainer width="100%" height={180}><BarChart data={C.ventasPorMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border}/><XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>fmtM(v)} width={55}/><Tooltip content={<ChartTooltip T={T}/>}/><Bar dataKey="total" fill={T.accent} radius={[4,4,0,0]} name="Facturación"/></BarChart></ResponsiveContainer></SectionCard>
-      <SectionCard title="Viajes mensuales" icon={Truck} T={T} color={T.green}><ResponsiveContainer width="100%" height={180}><AreaChart data={C.viajesPorMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border}/><XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} width={40}/><Tooltip content={<ChartTooltip T={T} prefix="#"/>}/><Area type="monotone" dataKey="total" stroke={T.green} fill={T.greenBg} name="Viajes"/></AreaChart></ResponsiveContainer></SectionCard>
       <SectionCard title="Saldos bancarios" icon={Building2} T={T} color={T.teal}><MiniTable T={T} headers={["Banco","Saldo"]} rows={[...Object.entries(C.saldosBancos||{}).sort((a,b)=>b[1]-a[1]).map(([banco,saldo])=>[banco,fmtFull(saldo)]),["TOTAL",fmtFull(C.totalCaja)]]}/></SectionCard>
       <SectionCard title="Compromisos próximos 7 días" icon={Calendar} T={T} color={T.amber}>{C.compromisosProx?.length>0?(<MiniTable T={T} headers={["Fecha","Concepto","Monto"]} rows={C.compromisosProx.map(r=>[r.fecha.toLocaleDateString("es-CL",{day:"2-digit",month:"short"}),r.concepto.length>30?r.concepto.slice(0,28)+"...":r.concepto,fmtM(r.monto)])}/>):<p style={{fontSize:12,color:T.txM,padding:8}}>Sin compromisos en los próximos 7 días</p>}</SectionCard>
       <SectionCard title={"Top clientes "+MESES[C.curMonth]} icon={Users} T={T} color={T.purple}><MiniTable T={T} headers={["Cliente","Facturación"]} rows={(C.topClientes||[]).map(c=>[c.name.length>25?c.name.slice(0,23)+"...":c.name,fmtM(c.total)])}/></SectionCard>
@@ -292,7 +806,12 @@ function HomeView({C,T,setTab}){
   </div>);
 }
 
-function VentasView({C,T}){
+
+// ═════════════════════════════════════════════════════════════════════════════
+// VENTAS VIEW — con toggle de proyección estacional/prorrateada/lineal + MEPCO
+// ═════════════════════════════════════════════════════════════════════════════
+
+function VentasView({C,T,projectionMode,setProjectionMode}){
   const mesLabel=MESES_FULL[C.curMonth];
   const varMes=C.totalMesAnterior>0?pctChange(C.totalMesActual,C.totalMesAnterior):0;
   const varAno=C.ventasAnoAnterior>0?pctChange(C.ventasAnoActual,C.ventasAnoAnterior):0;
@@ -302,41 +821,151 @@ function VentasView({C,T}){
   const mesActualAnterior = (C.ventasPorMesComparado||[])[C.curMonth];
   const varMesVsAnioAnt = mesActualAnterior && mesActualAnterior.anterior > 0 ? pctChange(mesActualAnterior.actual, mesActualAnterior.anterior) : 0;
 
+  const proj=C.projections||{};
+  const projection=projectionMode==="lineal"?proj.linear:projectionMode==="prorata"?proj.prorata:proj.seasonal;
+  const projPct=C.ventasAnoAnterior>0?pctChange(projection,C.ventasAnoAnterior):0;
+
+  const projectionModes=[
+    {id:"seasonal",label:"Estacional",desc:"Basada en patrón mensual del año anterior"},
+    {id:"prorata",label:"Prorrateada",desc:"Prorrateo por días hábiles transcurridos"},
+    {id:"lineal",label:"Lineal",desc:"Promedio simple × 12"},
+  ];
+
+  // Chart data con proyección por mes
+  const chartDataProj=(C.ventasPorMesConProyeccion||[]).map((m,i)=>({
+    mes:MESES[i],
+    real:m.actual>0?m.actual/1e6:null,
+    proyectado:m.proyectado!==null?m.proyectado/1e6:null,
+    anterior:m.anterior>0?m.anterior/1e6:null,
+  }));
+
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
-    <h2 style={{fontSize:18,fontWeight:700,color:T.tx}}>Ventas y facturación</h2>
+    <div>
+      <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Ventas y facturación</h2>
+      <p style={{fontSize:12,color:T.txM,marginTop:3}}>Lectura ejecutiva de facturación con proyección del cierre anual</p>
+    </div>
+
+    <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1}/>
+
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
       <KpiCard icon={DollarSign} label={`Facturación ${mesLabel}`} value={fmtM(C.totalMesActual)} T={T} sub={varMes!==0?fmtPct(varMes)+" vs mes anterior":undefined} color={T.accent} colorBg={T.accentBg}/>
       <KpiCard icon={TrendingUp} label="Acumulado año" value={fmtM(C.ventasAnoActual)} T={T} sub={varAno!==0?fmtPct(varAno)+` vs ${C.prevYear}`:undefined} color={T.green} colorBg={T.greenBg}/>
-      <KpiCard icon={Target} label="Mes anterior" value={fmtM(C.totalMesAnterior)} T={T} color={T.txM} colorBg={T.bg3+"88"}/>
+      <KpiCard icon={Target} label={`Proyección anual`} value={fmtM(projection)} T={T} sub={`${fmtPct(projPct)} vs ${C.prevYear}`} color={T.amber} colorBg={T.amberBg} badge={projectionMode.toUpperCase()}/>
+      <KpiCard icon={Zap} label="Impacto MEPCO acum." value={C.impactoMepcoAcum===0?"—":(C.impactoMepcoAcum>0?"+":"")+fmtM(C.impactoMepcoAcum)} T={T} sub={C.mepcoActivo?"Desde mayo 2026":"Inicia mayo 2026"} color={T.violet} colorBg={T.violetBg} badge={C.mepcoActivo?"VIGENTE":"PREVIO"}/>
     </div>
+
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
       <KpiCard icon={BarChart3} label={`${mesLabel} ${C.prevYear}`} value={fmtM(mesActualAnterior?.anterior || 0)} T={T} sub={varMesVsAnioAnt!==0?`${C.curYear}: ${fmtPct(varMesVsAnioAnt)}`:undefined} color={T.purple} colorBg={T.purpleBg}/>
-      <KpiCard icon={Activity} label={`Acumulado al corte (día ${new Date().getDate()})`} value={fmtM(C.acumCorteActual)} T={T} sub={`${C.prevYear}: ${fmtM(C.acumCorteAnterior)} (${fmtPct(varAcumCorte)})`} color={varAcumCorte>=0?T.green:T.red} colorBg={varAcumCorte>=0?T.greenBg:T.redBg}/>
+      <KpiCard icon={Activity} label={`Acum. al corte (día ${new Date().getDate()})`} value={fmtM(C.acumCorteActual)} T={T} sub={`${C.prevYear}: ${fmtM(C.acumCorteAnterior)} (${fmtPct(varAcumCorte)})`} color={varAcumCorte>=0?T.green:T.red} colorBg={varAcumCorte>=0?T.greenBg:T.redBg}/>
       <KpiCard icon={Target} label={`Meta: superar ${C.prevYear}`} value={fmtM(C.ventasAnoAnterior)} T={T} sub={`Falta ${fmtM(Math.max(0, C.ventasAnoAnterior - C.ventasAnoActual))}`} color={T.amber} colorBg={T.amberBg}/>
     </div>
+
+    {/* Selector de método de proyección */}
+    <div style={{background:T.card,borderRadius:14,padding:"14px 18px",border:`1px solid ${T.border}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:10}}>
+        <div>
+          <div style={{color:T.tx,fontWeight:700,fontSize:13,marginBottom:2}}>Método de proyección</div>
+          <div style={{color:T.txD,fontSize:11}}>
+            {proj.monthInProgress?`${MESES[proj.openMonth-1]} en curso (${proj.businessDaysElapsed}/${proj.businessDaysTotal} días hábiles · ${Math.round((proj.businessDaysElapsed/proj.businessDaysTotal)*100)}%)`:"Todos los meses cerrados"}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {projectionModes.map(m=>(
+            <button key={m.id} onClick={()=>setProjectionMode(m.id)} title={m.desc}
+              style={{padding:"7px 13px",borderRadius:10,border:`1px solid ${projectionMode===m.id?T.amber:T.border}`,background:projectionMode===m.id?T.amberBg:"transparent",color:projectionMode===m.id?T.amber:T.txM,cursor:"pointer",fontSize:11,fontWeight:700}}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(150px, 1fr))",gap:10,marginTop:6}}>
+        {projectionModes.map(m=>{
+          const val=m.id==="lineal"?proj.linear:m.id==="prorata"?proj.prorata:proj.seasonal;
+          const pct=C.ventasAnoAnterior>0?pctChange(val,C.ventasAnoAnterior):0;
+          return(
+            <div key={m.id} style={{padding:"8px 12px",borderRadius:10,background:projectionMode===m.id?`${T.amber}12`:T.bg3+"44",border:`1px solid ${projectionMode===m.id?T.amber+"55":T.border}`}}>
+              <div style={{fontSize:10,color:T.txD,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{m.label}</div>
+              <div style={{fontSize:14,fontWeight:800,color:T.tx}}>{fmtM(val)}</div>
+              <div style={{fontSize:10,color:pct>=0?T.green:T.red,fontWeight:700}}>{fmtPct(pct)} vs {C.prevYear}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+
+    {/* Gráfico principal con proyección estacional + MEPCO */}
+    <SectionCard title={`Comparación mensual — ${C.curYear} vs ${C.prevYear} (con proyección)`} icon={BarChart3} T={T} color={T.accent}>
+      <ResponsiveContainer width="100%" height={320}>
+        <ComposedChart data={chartDataProj}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+          <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
+          <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v.toFixed(0)}M`} width={55}/>
+          <Tooltip content={<ChartTooltip T={T}/>} formatter={(v)=>v!=null?`$${v.toFixed(1)}M`:"-"}/>
+          <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
+          <Bar dataKey="anterior" fill={T.txD} opacity={0.45} radius={[3,3,0,0]} name={String(C.prevYear)}/>
+          <Bar dataKey="real" fill={T.accent} radius={[3,3,0,0]} name={`${C.curYear} Real`}/>
+          <Bar dataKey="proyectado" fill={T.amber} fillOpacity={0.55} radius={[3,3,0,0]} name={`${C.curYear} Proyectado (estacional)`}/>
+          {C.curYear===2026 && (
+            <ReferenceLine x={MESES[MEPCO_ADJUSTMENT_MONTH-1]} stroke={T.violet} strokeDasharray="4 3" strokeWidth={2} label={{value:"⚡ Ajuste MEPCO",position:"top",fill:T.violet,fontSize:10,fontWeight:700}}/>
+          )}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </SectionCard>
+
+    {/* Tabla detallada mensual */}
+    <SectionCard title="Detalle mensual" icon={FileText} T={T} color={T.accent}>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr><th style={{padding:"8px 10px",textAlign:"left",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11}}>Mes</th><th style={{padding:"8px 10px",textAlign:"right",color:T.txD,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11}}>{C.prevYear}</th><th style={{padding:"8px 10px",textAlign:"right",color:T.accent,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11}}>{C.curYear}</th><th style={{padding:"8px 10px",textAlign:"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11}}>Var %</th></tr></thead>
+          <tbody>
+            {(C.ventasPorMesComparado||[]).filter(r=>r.actual>0||r.anterior>0).map((r,i)=>{const vp=r.anterior>0?pctChange(r.actual,r.anterior):0;const isPos=vp>=0;return(<tr key={i} style={{borderBottom:`1px solid ${T.border}22`,background:r.mes===MESES[C.curMonth]?T.accentBg:"transparent"}}><td style={{padding:"6px 10px",color:T.tx,fontWeight:r.mes===MESES[C.curMonth]?600:400}}>{r.mes}</td><td style={{padding:"6px 10px",textAlign:"right",color:T.txD}}>{fmtM(r.anterior)}</td><td style={{padding:"6px 10px",textAlign:"right",color:T.tx,fontWeight:500}}>{fmtM(r.actual)}</td><td style={{padding:"6px 10px",textAlign:"right",color:isPos?T.green:T.red,fontWeight:600}}>{r.anterior>0?fmtPct(vp):"—"}</td></tr>);})}
+            <tr style={{borderTop:`2px solid ${T.border}`}}><td style={{padding:"8px 10px",color:T.tx,fontWeight:800}}>TOTAL YTD</td><td style={{padding:"8px 10px",textAlign:"right",color:T.txD,fontWeight:700}}>{fmtM(C.acumAnterior)}</td><td style={{padding:"8px 10px",textAlign:"right",color:T.accent,fontWeight:800}}>{fmtM(C.acumActual)}</td><td style={{padding:"8px 10px",textAlign:"right",color:C.acumActual>=C.acumAnterior?T.green:T.red,fontWeight:800}}>{C.acumAnterior>0?fmtPct(pctChange(C.acumActual,C.acumAnterior)):"—"}</td></tr>
+            <tr style={{background:T.amberBg}}><td style={{padding:"8px 10px",color:T.amber,fontWeight:800}}>⚡ PROYECCIÓN ANUAL ({projectionMode})</td><td style={{padding:"8px 10px",textAlign:"right",color:T.txD,fontWeight:700}}>{fmtM(C.ventasAnoAnterior)}</td><td style={{padding:"8px 10px",textAlign:"right",color:T.amber,fontWeight:800}}>{fmtM(projection)}</td><td style={{padding:"8px 10px",textAlign:"right",color:projPct>=0?T.green:T.red,fontWeight:800}}>{fmtPct(projPct)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </SectionCard>
+
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
-      <SectionCard title={`Comparación mensual — ${C.curYear} vs ${C.prevYear}`} icon={BarChart3} T={T} color={T.accent}>
-        <ResponsiveContainer width="100%" height={240}><BarChart data={C.ventasPorMesComparado} barGap={2} barCategoryGap="20%"><CartesianGrid strokeDasharray="3 3" stroke={T.border}/><XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>fmtM(v)} width={55}/><Tooltip content={<ComparisonTooltip T={T} curYear={C.curYear} prevYear={C.prevYear}/>}/><Bar dataKey="anterior" fill={T.txD} radius={[3,3,0,0]} name={String(C.prevYear)} opacity={0.5}/><Bar dataKey="actual" fill={T.accent} radius={[3,3,0,0]} name={String(C.curYear)}/><Legend wrapperStyle={{fontSize:11,color:T.txM}} formatter={(value)=><span style={{color:T.txM,fontSize:11}}>{value}</span>}/></BarChart></ResponsiveContainer>
-        <div style={{marginTop:12,overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={{padding:"6px 8px",textAlign:"left",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:10}}>Mes</th><th style={{padding:"6px 8px",textAlign:"right",color:T.txD,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:10}}>{C.prevYear}</th><th style={{padding:"6px 8px",textAlign:"right",color:T.accent,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:10}}>{C.curYear}</th><th style={{padding:"6px 8px",textAlign:"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:10}}>Var %</th></tr></thead><tbody>{(C.ventasPorMesComparado||[]).filter(r=>r.actual>0||r.anterior>0).map((r,i)=>{const vp=r.anterior>0?pctChange(r.actual,r.anterior):0;const isPos=vp>=0;return(<tr key={i} style={{borderBottom:`1px solid ${T.border}22`,background:r.mes===MESES[C.curMonth]?T.accentBg:"transparent"}}><td style={{padding:"5px 8px",color:T.tx,fontWeight:r.mes===MESES[C.curMonth]?600:400}}>{r.mes}</td><td style={{padding:"5px 8px",textAlign:"right",color:T.txD}}>{fmtM(r.anterior)}</td><td style={{padding:"5px 8px",textAlign:"right",color:T.tx,fontWeight:500}}>{fmtM(r.actual)}</td><td style={{padding:"5px 8px",textAlign:"right",color:isPos?T.green:T.red,fontWeight:600,fontSize:11}}>{r.anterior>0?fmtPct(vp):"—"}</td></tr>);})}<tr style={{borderTop:`2px solid ${T.border}`}}><td style={{padding:"6px 8px",color:T.tx,fontWeight:700}}>TOTAL</td><td style={{padding:"6px 8px",textAlign:"right",color:T.txD,fontWeight:600}}>{fmtM(C.acumAnterior)}</td><td style={{padding:"6px 8px",textAlign:"right",color:T.accent,fontWeight:700}}>{fmtM(C.acumActual)}</td><td style={{padding:"6px 8px",textAlign:"right",color:C.acumActual>=C.acumAnterior?T.green:T.red,fontWeight:700}}>{C.acumAnterior>0?fmtPct(pctChange(C.acumActual,C.acumAnterior)):"—"}</td></tr></tbody></table></div>
+      <SectionCard title={`Participación clientes — ${mesLabel}`} icon={Users} T={T} color={T.purple}>
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart>
+            <Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={80} innerRadius={40} paddingAngle={2} label={({pct})=>`${pct}%`} labelLine={{stroke:T.txD}}>
+              {pieData.map((_,i)=><Cell key={i} fill={T.chart[i%T.chart.length]}/>)}
+            </Pie>
+            <Tooltip content={<ChartTooltip T={T}/>}/>
+          </PieChart>
+        </ResponsiveContainer>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8,justifyContent:"center"}}>
+          {pieData.map((d,i)=>(<span key={i} style={{fontSize:10,color:T.txM,display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:T.chart[i%T.chart.length]}}/>{d.name}</span>))}
+        </div>
       </SectionCard>
-      <SectionCard title={`Participación clientes — ${mesLabel}`} icon={Users} T={T} color={T.purple}><ResponsiveContainer width="100%" height={220}><PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={80} innerRadius={40} paddingAngle={2} label={({name,pct})=>`${pct}%`} labelLine={{stroke:T.txD}}>{pieData.map((_,i)=><Cell key={i} fill={T.chart[i%T.chart.length]}/>)}</Pie><Tooltip content={<ChartTooltip T={T}/>}/></PieChart></ResponsiveContainer><div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8,justifyContent:"center"}}>{pieData.map((d,i)=>(<span key={i} style={{fontSize:10,color:T.txM,display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:T.chart[i%T.chart.length]}}/>{d.name}</span>))}</div></SectionCard>
-      <SectionCard title="Top clientes del mes" icon={Users} T={T} color={T.accent}><MiniTable T={T} headers={["#","Cliente","Monto","% Part."]} rows={(C.topClientes||[]).map((c,i)=>[i+1,c.name.length>22?c.name.slice(0,20)+"...":c.name,fmtM(c.total),C.totalMesActual>0?((c.total/C.totalMesActual)*100).toFixed(1)+"%":"0%"])}/></SectionCard>
-      <SectionCard title="Últimas facturas ingresadas" icon={FileText} T={T} color={T.green}>{(C.ultimasFacturas||[]).length > 0 ? (<MiniTable T={T} maxRows={5} headers={["Fecha","Folio","Cliente","Tipo","Neto"]} rows={(C.ultimasFacturas||[]).map(r => [r.fecha,r.folio,r.cliente.length > 20 ? r.cliente.slice(0, 18) + "..." : r.cliente,<span key="tipo" style={{fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 4,background: String(r.tipo).toLowerCase().includes("credito") || String(r.tipo).toLowerCase().includes("crédito") ? T.redBg : T.greenBg,color: String(r.tipo).toLowerCase().includes("credito") || String(r.tipo).toLowerCase().includes("crédito") ? T.red : T.green,}}>{String(r.tipo).toLowerCase().includes("credito") || String(r.tipo).toLowerCase().includes("crédito") ? "NC" : "FAC"}</span>,<span key="neto" style={{color: r.neto < 0 ? T.red : T.tx,fontWeight: 500,}}>{fmtM(r.neto)}</span>,])}/>) : <p style={{fontSize:12,color:T.txM,padding:8}}>Sin facturas recientes</p>}</SectionCard>
+      <SectionCard title="Top clientes del mes" icon={Users} T={T} color={T.accent}>
+        <MiniTable T={T} headers={["#","Cliente","Monto","% Part."]} rows={(C.topClientes||[]).map((c,i)=>[i+1,c.name.length>22?c.name.slice(0,20)+"...":c.name,fmtM(c.total),C.totalMesActual>0?((c.total/C.totalMesActual)*100).toFixed(1)+"%":"0%"])}/>
+      </SectionCard>
+      <SectionCard title="Últimas facturas ingresadas" icon={FileText} T={T} color={T.green}>
+        {(C.ultimasFacturas||[]).length > 0 ? (
+          <MiniTable T={T} maxRows={5} headers={["Fecha","Folio","Cliente","Tipo","Neto"]} rows={(C.ultimasFacturas||[]).map(r => [
+            r.fecha,r.folio,r.cliente.length > 20 ? r.cliente.slice(0, 18) + "..." : r.cliente,
+            <span key="tipo" style={{fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 4,background: String(r.tipo).toLowerCase().includes("credito") || String(r.tipo).toLowerCase().includes("crédito") ? T.redBg : T.greenBg,color: String(r.tipo).toLowerCase().includes("credito") || String(r.tipo).toLowerCase().includes("crédito") ? T.red : T.green}}>{String(r.tipo).toLowerCase().includes("credito") || String(r.tipo).toLowerCase().includes("crédito") ? "NC" : "FAC"}</span>,
+            <span key="neto" style={{color: r.neto < 0 ? T.red : T.tx,fontWeight: 500}}>{fmtM(r.neto)}</span>,
+          ])}/>
+        ) : <p style={{fontSize:12,color:T.txM,padding:8}}>Sin facturas recientes</p>}
+      </SectionCard>
     </div>
   </div>);
 }
 
-function ComparisonTooltip({active,payload,label,T,curYear,prevYear}){
-  if(!active||!payload?.length)return null;
-  const anterior=payload.find(p=>p.dataKey==="anterior");const actual=payload.find(p=>p.dataKey==="actual");
-  const antVal=anterior?.value||0;const actVal=actual?.value||0;const vp=antVal>0?pctChange(actVal,antVal):0;
-  return(<div style={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"10px 14px",fontSize:12}}><div style={{color:"#e2e8f0",fontWeight:700,marginBottom:6}}>{label}</div><div style={{display:"flex",gap:8,color:"#94a3b8",marginBottom:3}}><span>{prevYear}:</span><span style={{fontWeight:600,color:"#94a3b8"}}>{fmtM(antVal)}</span></div><div style={{display:"flex",gap:8,color:"#3b82f6",marginBottom:3}}><span>{curYear}:</span><span style={{fontWeight:600,color:"#3b82f6"}}>{fmtM(actVal)}</span></div>{antVal>0&&(<div style={{borderTop:"1px solid #334155",paddingTop:4,marginTop:4,color:vp>=0?"#22c55e":"#ef4444",fontWeight:700,fontSize:13}}>{fmtPct(vp)}</div>)}</div>);
-}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// OPERACIONES / FINANZAS / LEASING / CREDITO / ALERTAS
+// ═════════════════════════════════════════════════════════════════════════════
 
 function OperacionesView({C,T}){
-  const varViajes=C.viajesMesAnteriorCount>0?pctChange(C.viajesMesActual,C.viajesMesAnteriorCount):0;const varCorte=C.viajesCorteAnterior>0?pctChange(C.viajesCorteActual,C.viajesCorteAnterior):0;
+  const varViajes=C.viajesMesAnteriorCount>0?pctChange(C.viajesMesActual,C.viajesMesAnteriorCount):0;
+  const varCorte=C.viajesCorteAnterior>0?pctChange(C.viajesCorteActual,C.viajesCorteAnterior):0;
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
-    <h2 style={{fontSize:18,fontWeight:700,color:T.tx}}>Operaciones</h2>
+    <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Operaciones</h2>
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
       <KpiCard icon={Truck} label="Viajes mes completo" value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={varViajes!==0?fmtPct(varViajes)+" vs mes anterior":undefined} color={T.green} colorBg={T.greenBg}/>
       <KpiCard icon={Activity} label={`Corte al día ${C.dayOfMonth}`} value={C.viajesCorteActual?.toLocaleString("es-CL")} T={T} sub={`${C.viajesCorteAnterior} mes ant. (${fmtPct(varCorte)})`} color={varCorte>=0?T.green:T.red} colorBg={varCorte>=0?T.greenBg:T.redBg}/>
@@ -362,7 +991,7 @@ function OperacionesView({C,T}){
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
       <SectionCard title="Viajes por mes" icon={BarChart3} T={T} color={T.green}><ResponsiveContainer width="100%" height={200}><BarChart data={C.viajesPorMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border}/><XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} width={40}/><Tooltip content={<ChartTooltip T={T} prefix="#"/>}/><Bar dataKey="total" fill={T.green} radius={[4,4,0,0]} name="Viajes"/></BarChart></ResponsiveContainer></SectionCard>
       <SectionCard title="Top clientes por viajes" icon={Users} T={T} color={T.accent}><MiniTable T={T} headers={["Cliente","Viajes","% Part."]} rows={(C.topClientesViajes||[]).map(c=>[c.name.length>22?c.name.slice(0,20)+"...":c.name,c.count,C.viajesMesActual>0?((c.count/C.viajesMesActual)*100).toFixed(1)+"%":"0%"])}/></SectionCard>
-      <SectionCard title="Viajes por tipo de equipo" icon={Truck} T={T} color={T.purple}>{C.viajesPorEquipo?.length>0?(<ResponsiveContainer width="100%" height={200}><PieChart><Pie data={C.viajesPorEquipo} dataKey="count" cx="50%" cy="50%" outerRadius={75} innerRadius={35} paddingAngle={2} label={({name,count})=>`${count}`} labelLine={{stroke:T.txD}}>{C.viajesPorEquipo.map((_,i)=><Cell key={i} fill={T.chart[i%T.chart.length]}/>)}</Pie><Tooltip content={<ChartTooltip T={T} prefix="#"/>}/></PieChart></ResponsiveContainer>):<p style={{fontSize:12,color:T.txM}}>Sin datos</p>}<div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6,justifyContent:"center"}}>{(C.viajesPorEquipo||[]).slice(0,6).map((d,i)=>(<span key={i} style={{fontSize:9,color:T.txM,display:"flex",alignItems:"center",gap:3}}><span style={{width:7,height:7,borderRadius:2,background:T.chart[i%T.chart.length]}}/>{d.name}</span>))}</div></SectionCard>
+      <SectionCard title="Viajes por tipo de equipo" icon={Truck} T={T} color={T.purple}>{C.viajesPorEquipo?.length>0?(<ResponsiveContainer width="100%" height={200}><PieChart><Pie data={C.viajesPorEquipo} dataKey="count" cx="50%" cy="50%" outerRadius={75} innerRadius={35} paddingAngle={2} label={({count})=>`${count}`} labelLine={{stroke:T.txD}}>{C.viajesPorEquipo.map((_,i)=><Cell key={i} fill={T.chart[i%T.chart.length]}/>)}</Pie><Tooltip content={<ChartTooltip T={T} prefix="#"/>}/></PieChart></ResponsiveContainer>):<p style={{fontSize:12,color:T.txM}}>Sin datos</p>}<div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6,justifyContent:"center"}}>{(C.viajesPorEquipo||[]).slice(0,6).map((d,i)=>(<span key={i} style={{fontSize:9,color:T.txM,display:"flex",alignItems:"center",gap:3}}><span style={{width:7,height:7,borderRadius:2,background:T.chart[i%T.chart.length]}}/>{d.name}</span>))}</div></SectionCard>
     </div>
   </div>);
 }
@@ -371,13 +1000,25 @@ function FinanzasView({C,T}){
   const DapBadge=({label,color,bg})=>(<span style={{fontSize:9,fontWeight:600,padding:"2px 8px",borderRadius:6,background:bg,color,letterSpacing:0.3}}>{label}</span>);
   const tipoLabel={trabajo:"Trabajo",inversion:"Inversión",credito:"Crédito"};const tipoColor={trabajo:T.accent,inversion:T.green,credito:T.amber};const tipoBg={trabajo:T.accentBg,inversion:T.greenBg,credito:T.amberBg};
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
-    <h2 style={{fontSize:18,fontWeight:700,color:T.tx}}>Finanzas</h2>
-    <div style={{display:"flex",gap:12,flexWrap:"wrap"}}><KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} color={T.teal} colorBg={T.tealBg}/><KpiCard icon={Target} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.green} colorBg={T.greenBg}/><KpiCard icon={Calendar} label="Compromisos mes" value={fmtM(C.totalCompromisosMes)} T={T} sub={`Guardado: ${fmtM(C.totalGuardadoMes)}`} color={T.amber} colorBg={T.amberBg}/></div>
-    <SectionCard title="Depósitos a plazo — desglose por tipo" icon={PiggyBank} T={T} color={T.purple}><div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:14}}><div style={{flex:"1 1 150px",background:T.accentBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.accent}22`}}><div style={{fontSize:10,color:T.accent,fontWeight:600,marginBottom:4}}>DAP TRABAJO</div><div style={{fontSize:18,fontWeight:700,color:T.tx}}>{fmtM(C.totalDAPTrabajo)}</div><div style={{fontSize:11,color:T.txM,marginTop:2}}>Ganancia: {fmtM(C.gananciaDAPTrabajo)}</div><div style={{fontSize:10,color:T.txD,marginTop:4}}>Capital de trabajo rotativo</div></div><div style={{flex:"1 1 150px",background:T.greenBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.green}22`}}><div style={{fontSize:10,color:T.green,fontWeight:600,marginBottom:4}}>DAP INVERSIÓN</div><div style={{fontSize:18,fontWeight:700,color:T.tx}}>{fmtM(C.totalDAPInversion)}</div><div style={{fontSize:11,color:T.txM,marginTop:2}}>Ganancia: {fmtM(C.gananciaDAPInversion)}</div><div style={{fontSize:10,color:T.txD,marginTop:4}}>Inversión a mayor plazo</div></div><div style={{flex:"1 1 150px",background:T.amberBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.amber}22`}}><div style={{fontSize:10,color:T.amber,fontWeight:600,marginBottom:4}}>DAP CRÉDITO</div><div style={{fontSize:18,fontWeight:700,color:T.tx}}>{fmtM(C.totalDAPCredito)}</div><div style={{fontSize:11,color:T.txM,marginTop:2}}>Ganancia: {fmtM(C.gananciaDAPCredito)}</div><div style={{fontSize:10,color:T.txD,marginTop:4}}>Reserva cuotas crédito Itaú</div></div></div><div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:`1px solid ${T.border}`}}><span style={{fontSize:13,fontWeight:600,color:T.tx}}>Total DAPs vigentes</span><span style={{fontSize:13,fontWeight:700,color:T.tx}}>{fmtM(C.totalDAP)}</span></div><div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:T.txM}}>Ganancia total DAPs</span><span style={{fontSize:12,fontWeight:600,color:T.green}}>{fmtM(C.gananciaDAP)}</span></div></SectionCard>
+    <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Finanzas</h2>
+    <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+      <KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} color={T.teal} colorBg={T.tealBg}/>
+      <KpiCard icon={Gauge} label="Días de caja" value={C.diasCaja!==null?`${C.diasCaja} días`:"—"} T={T} sub={C.burnDiario>0?`Burn diario ${fmtM(C.burnDiario)}`:""} color={C.diasCaja===null?T.txM:C.diasCaja>=45?T.green:C.diasCaja>=20?T.amber:T.red} colorBg={C.diasCaja===null?T.bg3:C.diasCaja>=45?T.greenBg:C.diasCaja>=20?T.amberBg:T.redBg}/>
+      <KpiCard icon={Target} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.green} colorBg={T.greenBg}/>
+      <KpiCard icon={Calendar} label="Compromisos mes" value={fmtM(C.totalCompromisosMes)} T={T} sub={`Guardado: ${fmtM(C.totalGuardadoMes)}`} color={T.amber} colorBg={T.amberBg}/>
+    </div>
+    <SectionCard title="Depósitos a plazo — desglose por tipo" icon={PiggyBank} T={T} color={T.purple}>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:14}}>
+        <div style={{flex:"1 1 150px",background:T.accentBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.accent}22`}}><div style={{fontSize:10,color:T.accent,fontWeight:600,marginBottom:4}}>DAP TRABAJO</div><div style={{fontSize:18,fontWeight:700,color:T.tx}}>{fmtM(C.totalDAPTrabajo)}</div><div style={{fontSize:11,color:T.txM,marginTop:2}}>Ganancia: {fmtM(C.gananciaDAPTrabajo)}</div><div style={{fontSize:10,color:T.txD,marginTop:4}}>Capital de trabajo rotativo</div></div>
+        <div style={{flex:"1 1 150px",background:T.greenBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.green}22`}}><div style={{fontSize:10,color:T.green,fontWeight:600,marginBottom:4}}>DAP INVERSIÓN</div><div style={{fontSize:18,fontWeight:700,color:T.tx}}>{fmtM(C.totalDAPInversion)}</div><div style={{fontSize:11,color:T.txM,marginTop:2}}>Ganancia: {fmtM(C.gananciaDAPInversion)}</div><div style={{fontSize:10,color:T.txD,marginTop:4}}>Inversión a mayor plazo</div></div>
+        <div style={{flex:"1 1 150px",background:T.amberBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.amber}22`}}><div style={{fontSize:10,color:T.amber,fontWeight:600,marginBottom:4}}>DAP CRÉDITO</div><div style={{fontSize:18,fontWeight:700,color:T.tx}}>{fmtM(C.totalDAPCredito)}</div><div style={{fontSize:11,color:T.txM,marginTop:2}}>Ganancia: {fmtM(C.gananciaDAPCredito)}</div><div style={{fontSize:10,color:T.txD,marginTop:4}}>Reserva cuotas crédito Itaú</div></div>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:`1px solid ${T.border}`}}><span style={{fontSize:13,fontWeight:600,color:T.tx}}>Total DAPs vigentes</span><span style={{fontSize:13,fontWeight:700,color:T.tx}}>{fmtM(C.totalDAP)}</span></div>
+      <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:T.txM}}>Ganancia total DAPs</span><span style={{fontSize:12,fontWeight:600,color:T.green}}>{fmtM(C.gananciaDAP)}</span></div>
+    </SectionCard>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
       <SectionCard title="Saldos bancarios" icon={Building2} T={T} color={T.teal}><MiniTable T={T} headers={["Banco","Saldo"]} rows={[...Object.entries(C.saldosBancos||{}).sort((a,b)=>b[1]-a[1]).map(([banco,saldo])=>[banco,fmtFull(saldo)]),["TOTAL",fmtFull(C.totalCaja)]]}/></SectionCard>
       <SectionCard title="Fondos mutuos" icon={TrendingUp} T={T} color={T.purple}><MiniTable T={T} headers={["Fondo","Admin.","Invertido","Actual","Rent. %"]} rows={(C.fondosSaldos||[]).map(r=>[r.fondo,r.admin,fmtM(r.invertido),fmtM(r.actual),r.rentPct])}/>{C.totalFondos>0&&(<div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",borderTop:`1px solid ${T.border}`,marginTop:8}}><span style={{fontSize:12,fontWeight:600,color:T.tx}}>Total FF.MM.</span><span style={{fontSize:12,fontWeight:700,color:T.tx}}>{fmtM(C.totalFondos)}</span></div>)}</SectionCard>
-      <SectionCard title="Inversión real (no incluye trabajo ni crédito)" icon={Target} T={T} color={T.green}><div style={{display:"flex",flexDirection:"column",gap:8}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:T.txM}}>DAP Inversión</span><span style={{fontSize:12,fontWeight:600,color:T.tx}}>{fmtM(C.totalDAPInversion)}</span></div><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:T.txM}}>Fondos Mutuos</span><span style={{fontSize:12,fontWeight:600,color:T.tx}}>{fmtM(C.totalFondos)}</span></div><div style={{display:"flex",justifyContent:"space-between",borderTop:`1px solid ${T.border}`,paddingTop:8}}><span style={{fontSize:14,fontWeight:700,color:T.green}}>Total inversión real</span><span style={{fontSize:14,fontWeight:700,color:T.green}}>{fmtM(C.totalInversionReal)}</span></div></div></SectionCard>
       <SectionCard title="DAPs — próximos vencimientos" icon={PiggyBank} T={T} color={T.accent}><MiniTable T={T} headers={["Banco","Tipo","Monto","Final","Vence","Tasa"]} rows={(C.dapProximos||[]).map(r=>[r.banco,<DapBadge key="t" label={tipoLabel[r._tipoNorm]||r.tipo} color={tipoColor[r._tipoNorm]||T.txM} bg={tipoBg[r._tipoNorm]||T.bg3}/>,fmtM(r.monto),fmtM(r.montoFinal),r.vencimiento?.toLocaleDateString("es-CL",{day:"2-digit",month:"short"}),r.tasa||""])}/></SectionCard>
       <SectionCard title="Compromisos próximos 7 días" icon={Calendar} T={T} color={T.amber}>{C.compromisosProx?.length>0?(<MiniTable T={T} headers={["Fecha","Concepto","Monto","Guardado","Falta"]} rows={C.compromisosProx.map(r=>[r.fecha.toLocaleDateString("es-CL",{weekday:"short",day:"2-digit",month:"short"}),r.concepto.length>25?r.concepto.slice(0,23)+"...":r.concepto,fmtM(r.monto),fmtM(r.guardado),r.falta>0?fmtM(r.falta):"Ok"])}/>):<p style={{fontSize:12,color:T.txM,padding:8}}>Sin compromisos pendientes</p>}</SectionCard>
       <SectionCard title={`Calendario del mes — ${MESES_FULL[C.curMonth]}`} icon={Clock} T={T} color={T.accent}><MiniTable T={T} maxRows={15} headers={["Fecha","Concepto","Monto","Estado"]} rows={(C.compromisosMes||[]).sort((a,b)=>a.fecha-b.fecha).map(r=>[r.fecha.toLocaleDateString("es-CL",{day:"2-digit",month:"short"}),r.concepto.length>28?r.concepto.slice(0,26)+"...":r.concepto,fmtM(r.monto),r.estado||"-"])}/></SectionCard>
@@ -387,7 +1028,7 @@ function FinanzasView({C,T}){
 
 function LeasingView({C,T}){
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
-    <h2 style={{fontSize:18,fontWeight:700,color:T.tx}}>Leasing</h2>
+    <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Leasing</h2>
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}><KpiCard icon={Truck} label="Contratos activos" value={String(C.leasingContratosActivos)} T={T} sub={`${C.leasingTractosTotal} tractos en total`} color={T.accent} colorBg={T.accentBg}/><KpiCard icon={DollarSign} label="Cuota mensual s/IVA" value={fmtM(C.leasingTotalCuotaSinIVA)} T={T} sub={`${(C.leasingTotalUF||0).toLocaleString("es-CL",{maximumFractionDigits:0})} UF`} color={T.amber} colorBg={T.amberBg}/><KpiCard icon={DollarSign} label="Cuota mensual c/IVA" value={fmtM(C.leasingTotalCuotaIVA)} T={T} color={T.red} colorBg={T.redBg}/><KpiCard icon={Banknote} label="Deuda pendiente" value={fmtM(C.leasingDeudaTotal)} T={T} color={T.red} colorBg={T.redBg}/></div>
     <SectionCard title="Distribución de cuotas por día de pago" icon={Calendar} T={T} color={T.accent}><div style={{display:"flex",gap:12,flexWrap:"wrap"}}><div style={{flex:"1 1 150px",background:T.accentBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.accent}22`}}><div style={{fontSize:10,color:T.accent,fontWeight:600,marginBottom:4}}>DÍA 5</div><div style={{fontSize:18,fontWeight:700,color:T.tx}}>{(C.cuotaDia5UF||0).toLocaleString("es-CL",{maximumFractionDigits:0})} UF</div><div style={{fontSize:11,color:T.txM,marginTop:2}}>{C.leasingDet?.filter(r=>parseNum(r["Dia Vcto"]||r.DiaVcto)===5).length||0} contratos</div></div><div style={{flex:"1 1 150px",background:T.amberBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.amber}22`}}><div style={{fontSize:10,color:T.amber,fontWeight:600,marginBottom:4}}>DÍA 15</div><div style={{fontSize:18,fontWeight:700,color:T.tx}}>{(C.cuotaDia15UF||0).toLocaleString("es-CL",{maximumFractionDigits:0})} UF</div><div style={{fontSize:11,color:T.txM,marginTop:2}}>{C.leasingDet?.filter(r=>parseNum(r["Dia Vcto"]||r.DiaVcto)===15).length||0} contratos</div></div><div style={{flex:"1 1 150px",background:T.redBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.red}22`}}><div style={{fontSize:10,color:T.red,fontWeight:600,marginBottom:4}}>TOTAL MENSUAL</div><div style={{fontSize:18,fontWeight:700,color:T.tx}}>{(C.leasingTotalUF||0).toLocaleString("es-CL",{maximumFractionDigits:0})} UF</div><div style={{fontSize:11,color:T.txM,marginTop:2}}>c/IVA: {fmtM(C.leasingTotalCuotaIVA)}</div></div></div></SectionCard>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
@@ -402,7 +1043,7 @@ function LeasingView({C,T}){
 function CreditoView({C,T}){
   const proxFecha=C.creditoProxima?parseDate(C.creditoProxima.fecha):null;const proxLabel=proxFecha?proxFecha.toLocaleDateString("es-CL",{day:"2-digit",month:"long",year:"numeric"}):"—";
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
-    <h2 style={{fontSize:18,fontWeight:700,color:T.tx}}>Crédito comercial — Banco Itaú</h2>
+    <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Crédito comercial — Banco Itaú</h2>
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}><KpiCard icon={Banknote} label="Deuda total pendiente" value={fmtM(C.creditoDeudaTotal)} T={T} sub={`Capital ${fmtM(C.creditoSaldoActual)} + Intereses ${fmtM(C.creditoInteresesPendientes)}`} color={T.red} colorBg={T.redBg}/><KpiCard icon={DollarSign} label="Cuota mensual" value={fmtM(C.creditoValorCuota)} T={T} sub={`${C.creditoTotalCuotas} cuotas totales`} color={T.amber} colorBg={T.amberBg}/><KpiCard icon={Calendar} label="Próximo pago" value={proxLabel} T={T} sub={C.creditoProxima?`Cuota #${C.creditoProxima.cuota} · Capital ${fmtM(C.creditoProxima.capital)} + Interés ${fmtM(C.creditoProxima.interes)}`:"En período de gracia"} color={T.accent} colorBg={T.accentBg}/><KpiCard icon={Target} label="Avance" value={`${C.creditoCuotasPagadas}/${C.creditoTotalCuotas}`} T={T} sub={`${C.creditoCuotasPorPagar} cuotas restantes`} color={T.green} colorBg={T.greenBg}/></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
       <SectionCard title="Resumen del crédito" icon={CreditCard} T={T} color={T.accent}><div style={{display:"flex",flexDirection:"column",gap:8}}>{[["Monto original",fmtFull(5000000000)],["Plazo","60 cuotas (58 meses + 2 gracia)"],["Cuota mensual",fmtFull(C.creditoValorCuota)],["Cuotas pagadas",String(C.creditoCuotasPagadas)],["Cuotas restantes",String(C.creditoCuotasPorPagar)],["Saldo insoluto (capital)",fmtFull(C.creditoSaldoActual)],["Intereses pendientes",fmtM(C.creditoInteresesPendientes)],["Deuda total (cap+int)",fmtM(C.creditoDeudaTotal)],["Total intereses del crédito",fmtM(C.creditoTotalIntereses)]].map(([label,val],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:i<8?`1px solid ${T.border}22`:"none"}}><span style={{fontSize:12,color:T.txM}}>{label}</span><span style={{fontSize:12,fontWeight:500,color:T.tx}}>{val}</span></div>))}</div></SectionCard>
@@ -415,7 +1056,7 @@ function CreditoView({C,T}){
 function AlertasView({C,T}){
   const typeStyle={danger:{bg:T.redBg,border:T.red,color:T.red},warning:{bg:T.amberBg,border:T.amber,color:T.amber},info:{bg:T.accentBg,border:T.accent,color:T.accent}};
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
-    <h2 style={{fontSize:18,fontWeight:700,color:T.tx}}>Alertas</h2>
+    <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Alertas</h2>
     {C.alertas?.length===0&&(<div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:12,padding:20,textAlign:"center"}}><span style={{fontSize:14,color:T.green,fontWeight:600}}>Todo en orden — sin alertas activas</span></div>)}
     {(C.alertas||[]).map((a,i)=>{const s=typeStyle[a.type]||typeStyle.info;return(<div key={i} style={{background:s.bg,border:`1px solid ${s.border}33`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:12}}><div style={{background:s.border+"22",borderRadius:8,padding:6,display:"flex",flexShrink:0}}><a.icon size={16} color={s.color}/></div><div><span style={{fontSize:10,fontWeight:600,color:s.color,textTransform:"uppercase",letterSpacing:0.5}}>{a.type==="danger"?"Crítico":a.type==="warning"?"Atención":"Info"}</span><p style={{fontSize:13,color:T.tx,marginTop:2,lineHeight:1.4}}>{a.msg}</p></div></div>);})}
   </div>);
