@@ -252,15 +252,32 @@ function computeHighlights(C){
     });
   }
 
-  // 8. Días de caja si es crítico
-  if(C.diasCaja!==null && C.diasCaja<30){
+  // 8. Cobertura semana crítica
+  if(C.primeraSemanaCritica){
+    const faltante=C.primeraSemanaCritica.compromisos-C.primeraSemanaCritica.ingresos;
+    const esta=C.primeraSemanaCritica.semana;
     items.push({
-      score:C.diasCaja<15?92:78,
-      type:C.diasCaja<15?"danger":"warning",
+      score:esta===1?95:esta===2?85:75,
+      type:esta===1?"danger":"warning",
       icon:Gauge,
-      title:`Días de caja bajos: ${C.diasCaja} días`,
-      text:`Caja ${fmtM(C.totalCaja)} cubre ~${C.diasCaja} días al ritmo de compromisos actuales`
+      title:`Cobertura insuficiente en semana ${esta} (${C.primeraSemanaCritica.label})`,
+      text:`Compromisos ${fmtM(C.primeraSemanaCritica.compromisos)} vs ingresos esperados ${fmtM(C.primeraSemanaCritica.ingresos)} — falta ${fmtM(faltante)}`
     });
+  }
+
+  // 9. Divergencia entre proyección estacional y por viajes (>15%)
+  if(C.projections?.seasonal>0 && C.proyAnualPorViajes>0){
+    const divPct=Math.abs(C.proyAnualPorViajes-C.projections.seasonal)/C.projections.seasonal*100;
+    if(divPct>15){
+      const viajesMayor=C.proyAnualPorViajes>C.projections.seasonal;
+      items.push({
+        score:68,
+        type:"info",
+        icon:Sparkles,
+        title:"Proyecciones divergentes — revisar",
+        text:`Estacional: ${fmtM(C.projections.seasonal)} vs Basada en viajes: ${fmtM(C.proyAnualPorViajes)} (${divPct.toFixed(0)}% diferencia — ${viajesMayor?"viajes anticipan mejor cierre":"viajes sugieren desaceleración"})`
+      });
+    }
   }
 
   return items.sort((a,b)=>b.score-a.score).slice(0,3);
@@ -306,12 +323,13 @@ function computeSemaforo(C){
   // 3 señales con peso igual
   const signals=[];
 
-  // 1. Cobertura de caja (días de caja)
-  if(C.diasCaja!==null){
+  // 1. Cobertura de liquidez próximos 30 días (caja + DAPs que vencen / compromisos)
+  if(C.coberturaRatio30!==null){
     let s;
-    if(C.diasCaja>=45) s={level:"verde",text:`Caja cubre ${C.diasCaja} días`};
-    else if(C.diasCaja>=20) s={level:"amarillo",text:`Caja cubre ${C.diasCaja} días`};
-    else s={level:"rojo",text:`Caja solo cubre ${C.diasCaja} días`};
+    const r=C.coberturaRatio30;
+    if(r>=1.2) s={level:"verde",text:`Liquidez 30d ${r.toFixed(2)}x`};
+    else if(r>=1.0) s={level:"amarillo",text:`Liquidez 30d ${r.toFixed(2)}x`};
+    else s={level:"rojo",text:`Liquidez 30d ${r.toFixed(2)}x`};
     signals.push(s);
   }
 
@@ -558,6 +576,102 @@ export default function App(){
     const viajesCorteActual=viajesMesActual.filter(r=>r._date.getDate()<=dayOfMonth).length;
     const viajesCorteAnterior=viajesMesAnterior.filter(r=>r._date.getDate()<=dayOfMonth).length;
     const viajesPorMes=[];for(let m=0;m<12;m++){const rows=viajesRows.filter(r=>r._date.getMonth()===m&&r._date.getFullYear()===curYear);viajesPorMes.push({mes:MESES[m],total:rows.length});}
+
+    // ══════════ PROYECCIÓN POR VIAJES (lag 1 mes: viajes de mes N → facturación mes N+1) ══════════
+    // Estrategia: aprender tasa $/viaje por cliente del histórico 2025, aplicarla a viajes 2026
+    // Fallback a tasa global cuando cliente tiene <3 meses de histórico
+    const normClienteKey=(s)=>normName(s).replace(/\s+/g," ").trim();
+
+    // Construimos dos mapas históricos año anterior:
+    //   viajesByClienteMes[clienteKey][monthIndex] = count
+    //   ventasByClienteMes[clienteKey][monthIndex] = $
+    const viajesByClienteMesPrev={};
+    const ventasByClienteMesPrev={};
+    viajesRows.forEach(r=>{
+      if(r._date.getFullYear()!==prevYear)return;
+      const k=normClienteKey(r._cliente);if(!k)return;
+      const m=r._date.getMonth();
+      if(!viajesByClienteMesPrev[k])viajesByClienteMesPrev[k]=Array(12).fill(0);
+      viajesByClienteMesPrev[k][m]+=1;
+    });
+    ventasRows.forEach(r=>{
+      if(r._date.getFullYear()!==prevYear)return;
+      const rawName=r["RAZON SOCIAL"]||r["Razon Social"]||r.razon_social||"";
+      const k=normClienteKey(rawName);if(!k)return;
+      const m=r._date.getMonth();
+      if(!ventasByClienteMesPrev[k])ventasByClienteMesPrev[k]=Array(12).fill(0);
+      ventasByClienteMesPrev[k][m]+=r._neto;
+    });
+
+    // Tasa $/viaje por cliente = (suma ventas año ant.) / (suma viajes del mes ANTERIOR al de la venta, año ant.)
+    // Es decir, si el lag es 1 mes: ventas de febrero se explican con viajes de enero.
+    const tasaPorCliente={};
+    let globalVentasLagged=0, globalViajesLagged=0;
+    Object.keys(viajesByClienteMesPrev).forEach(k=>{
+      const vj=viajesByClienteMesPrev[k];
+      const vt=ventasByClienteMesPrev[k]||Array(12).fill(0);
+      let sumV=0,sumT=0,mesesConData=0;
+      for(let m=0;m<11;m++){ // viajes mes m → ventas mes m+1
+        if(vj[m]>0 && vt[m+1]>0){
+          sumT+=vj[m];
+          sumV+=vt[m+1];
+          mesesConData++;
+        }
+      }
+      if(mesesConData>=3 && sumT>0){
+        tasaPorCliente[k]={tasa:sumV/sumT,meses:mesesConData,confianza:"alta"};
+      }else if(mesesConData>=1 && sumT>0){
+        tasaPorCliente[k]={tasa:sumV/sumT,meses:mesesConData,confianza:"baja"};
+      }
+      if(sumT>0){globalVentasLagged+=sumV;globalViajesLagged+=sumT;}
+    });
+    const tasaGlobal=globalViajesLagged>0?globalVentasLagged/globalViajesLagged:0;
+
+    // Aplicamos la tasa: viajes del mes N (año actual) → facturación esperada mes N+1
+    // Para cada mes del año actual, sumamos viajes por cliente y calculamos venta proyectada
+    const facturacionProyectadaPorViajes=Array(12).fill(0);
+    const desgloseCurMonthProy=[]; // para debug/tooltip
+    for(let mViajes=0;mViajes<12;mViajes++){
+      const mVenta=mViajes+1;
+      if(mVenta>11)continue; // dic viajes → ene año siguiente, no lo contamos
+      // agrupar viajes de ese mes del año actual por cliente
+      const viajesMesCliente={};
+      viajesRows.forEach(r=>{
+        if(r._date.getFullYear()!==curYear||r._date.getMonth()!==mViajes)return;
+        const k=normClienteKey(r._cliente);if(!k)return;
+        viajesMesCliente[k]=(viajesMesCliente[k]||0)+1;
+      });
+      let totalProy=0;
+      Object.entries(viajesMesCliente).forEach(([k,count])=>{
+        const t=tasaPorCliente[k];
+        const tasa=(t&&t.tasa)||tasaGlobal;
+        const aporte=count*tasa;
+        totalProy+=aporte;
+        if(mVenta===curMonth){
+          desgloseCurMonthProy.push({cliente:k,viajes:count,tasa,aporte,confianza:t?t.confianza:"global"});
+        }
+      });
+      facturacionProyectadaPorViajes[mVenta]=totalProy;
+    }
+    // Proyección del mes actual y del siguiente
+    const proyMesActualPorViajes=facturacionProyectadaPorViajes[curMonth]||0;
+    const proyMesSiguientePorViajes=curMonth<11?facturacionProyectadaPorViajes[curMonth+1]||0:0;
+
+    // Proyección anual por viajes: suma meses cerrados reales + proy. restante desde viajes
+    // Para meses futuros sin viajes aún, caemos a estacional
+    let proyAnualPorViajes=0;
+    for(let m=0;m<12;m++){
+      const real=ventasPorMesComparado[m]?.actual||0;
+      if(real>0 && m<curMonth){
+        proyAnualPorViajes+=real;
+      }else if(m===curMonth){
+        // mes en curso: mayor entre real ya facturado y proyección viajes
+        proyAnualPorViajes+=Math.max(real,facturacionProyectadaPorViajes[m]);
+      }else{
+        // futuro: proy viajes si hay, si no caerá a 0 (se sumará estacional después)
+        proyAnualPorViajes+=facturacionProyectadaPorViajes[m]||0;
+      }
+    }
     const vClienteMap={};viajesMesActual.forEach(r=>{vClienteMap[r._cliente]=(vClienteMap[r._cliente]||0)+1;});
     const topClientesViajes=Object.entries(vClienteMap).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,count])=>({name,count}));
     const equipoMap={};viajesMesActual.forEach(r=>{const e=r._equipo||"Sin tipo";equipoMap[e]=(equipoMap[e]||0)+1;});
@@ -611,11 +725,47 @@ export default function App(){
     const nextWeek=new Date(now);nextWeek.setDate(nextWeek.getDate()+7);const compromisosProx=calRows.filter(r=>r.fecha>=now&&r.fecha<=nextWeek).sort((a,b)=>a.fecha-b.fecha);const totalCompromisosProx=compromisosProx.reduce((s,r)=>s+r.monto,0);
     const compromisosMes=calRows.filter(r=>r.fecha&&r.fecha.getMonth()===curMonth&&r.fecha.getFullYear()===curYear);const totalCompromisosMes=compromisosMes.reduce((s,r)=>s+r.monto,0);const totalGuardadoMes=compromisosMes.reduce((s,r)=>s+r.guardado,0);
 
-    // ══════════ DÍAS DE CAJA (usa compromisos próx 60 días como quemado) ══════════
-    const next60=new Date(now);next60.setDate(next60.getDate()+60);
-    const compromisos60d=calRows.filter(r=>r.fecha>=now&&r.fecha<=next60);
-    const burnDiario=compromisos60d.reduce((s,r)=>s+r.monto,0)/60;
-    const diasCaja=burnDiario>0?Math.round(totalCaja/burnDiario):null;
+    // ══════════ COBERTURA SEMANAL — realista: caja + DAP que vence esa semana vs compromisos ══════════
+    // Semanas de lunes a domingo, las próximas 4
+    const startOfWeek=(d)=>{const day=d.getDay();const diff=d.getDate()-day+(day===0?-6:1);return new Date(d.getFullYear(),d.getMonth(),diff);};
+    const weekStart0=startOfWeek(now);
+    const dapVigentes=(data.finDAP||[]).filter(r=>{const v=(r.Vigente||r.vigente||"").toString().toLowerCase();return v==="si"||v==="sí"||v==="yes";}).map(r=>({vencimiento:parseDate(r.Vencimiento||r.vencimiento),montoFinal:parseNum(r["Monto Final"]||r.MontoFinal||r.monto_final)||parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),banco:r.Banco||r.banco})).filter(r=>r.vencimiento);
+    const coberturaSemanas=[];
+    let cajaRestante=totalCaja;
+    for(let w=0;w<4;w++){
+      const ws=new Date(weekStart0); ws.setDate(ws.getDate()+w*7);
+      const we=new Date(ws); we.setDate(we.getDate()+6);we.setHours(23,59,59,999);
+      const compSemana=calRows.filter(r=>r.fecha>=ws&&r.fecha<=we);
+      const compMonto=compSemana.reduce((s,r)=>s+r.monto,0);
+      const dapSemana=dapVigentes.filter(r=>r.vencimiento>=ws&&r.vencimiento<=we);
+      const dapMonto=dapSemana.reduce((s,r)=>s+r.montoFinal,0);
+      // Caja disponible al inicio de la semana: solo la tenemos en w=0, luego se arrastra lo que sobró
+      const cajaInicio = w===0 ? cajaRestante : cajaRestante;
+      const ingresosSemana = cajaInicio + dapMonto;
+      const neto = ingresosSemana - compMonto;
+      cajaRestante = Math.max(0, neto); // no arrastramos faltantes
+      const ratio = compMonto>0 ? ingresosSemana/compMonto : null;
+      coberturaSemanas.push({
+        semana:w+1,
+        inicio:ws,fin:we,
+        label:`${ws.getDate().toString().padStart(2,"0")}/${(ws.getMonth()+1).toString().padStart(2,"0")} — ${we.getDate().toString().padStart(2,"0")}/${(we.getMonth()+1).toString().padStart(2,"0")}`,
+        compromisos:compMonto,
+        dapVence:dapMonto,
+        cajaInicio,
+        ingresos:ingresosSemana,
+        neto,
+        ratio,
+        dapCount:dapSemana.length,
+        compCount:compSemana.length,
+      });
+    }
+    // Cobertura global próx 30d
+    const next30=new Date(now);next30.setDate(next30.getDate()+30);
+    const comp30=calRows.filter(r=>r.fecha>=now&&r.fecha<=next30).reduce((s,r)=>s+r.monto,0);
+    const dap30=dapVigentes.filter(r=>r.vencimiento>=now&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
+    const liquidez30 = totalCaja + dap30;
+    const coberturaRatio30 = comp30>0 ? liquidez30/comp30 : null;
+    const primeraSemanaCritica = coberturaSemanas.find(s=>s.ratio!==null && s.ratio<1);
 
     // ══════════ MARGEN MES ESTIMADO ══════════
     // Facturación mes actual - (compromisos del mes + cuota leasing c/IVA + cuota crédito)
@@ -629,7 +779,8 @@ export default function App(){
     if(totalContratados>0&&pctOcupacionConductores<75){alertas.push({type:"warning",icon:Users,msg:`Ocupación conductores: ${pctOcupacionConductores.toFixed(1)}% — ${totalEnExpedicion} de ${totalContratados} en expedición`});}
     if(totalTractocamiones>0&&pctOcupacionTractos<75){alertas.push({type:"warning",icon:Truck,msg:`Ocupación tractos prom. diario: ${pctOcupacionTractos.toFixed(1)}% — ${tractosActivosMes} de ${totalTractocamiones} (prom. ${diasConDatosTractos} días)`});}
     if(totalTractocamiones>0&&pctOcupacionTractosAyer<75&&lastFullDay){alertas.push({type:"danger",icon:Truck,msg:`Ocupación tractos ${lastFullDayLabel}: ${pctOcupacionTractosAyer.toFixed(1)}% — ${tractosActivosAyer} de ${totalTractocamiones}`});}
-    if(diasCaja!==null && diasCaja<20){alertas.push({type:"danger",icon:Gauge,msg:`Días de caja críticos: ${diasCaja} días con el ritmo actual de compromisos`});}
+    if(primeraSemanaCritica){const faltante=primeraSemanaCritica.compromisos-primeraSemanaCritica.ingresos;alertas.push({type:"danger",icon:AlertTriangle,msg:`Cobertura semana ${primeraSemanaCritica.label}: faltan ${fmtM(faltante)} (compromisos ${fmtM(primeraSemanaCritica.compromisos)} vs ingresos ${fmtM(primeraSemanaCritica.ingresos)})`});}
+    if(coberturaRatio30!==null && coberturaRatio30<1){alertas.push({type:"warning",icon:AlertTriangle,msg:`Liquidez 30d insuficiente: caja+DAPs ${fmtM(liquidez30)} vs compromisos ${fmtM(comp30)} (${(coberturaRatio30*100).toFixed(0)}% cobertura)`});}
 
     // ══════════ LEASING ══════════
     const leasingDet=(data.leasingDetalle||[]).filter(r=>(r.Estado||r.estado||"").toUpperCase()==="ACTIVO");const leasingContratosActivos=leasingDet.length;const leasingTractosTotal=leasingDet.reduce((s,r)=>s+parseNum(r["N Tractos"]||r.Tractos||r.tractos),0);
@@ -652,7 +803,7 @@ export default function App(){
     const creditoMesEstimado=creditoValorCuota;
     const margenMesEstimado=totalMesActual-(totalCompromisosMes+leasingMesEstimado+creditoMesEstimado);
 
-    return{totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,diasCaja,burnDiario,margenMesEstimado,leasingMesEstimado,creditoMesEstimado};
+    return{totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,margenMesEstimado,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,liquidez30,comp30,dap30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseCurMonthProy,facturacionProyectadaPorViajes,comp60Total:comp30*2};
   },[data]);
 
   if(loading&&!computed){return(<div style={{background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:T.tx,fontFamily:"'Inter','SF Pro Display',system-ui,sans-serif"}}><div style={{textAlign:"center"}}><RefreshCw size={32} color={T.accent} style={{animation:"spin 1s linear infinite"}}/><p style={{marginTop:16,color:T.txM}}>Cargando datos...</p><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div></div>);}
@@ -741,12 +892,21 @@ function HomeView({C,T,setTab}){
       <KpiCard icon={DollarSign} label="Facturación mes" value={fmtM(C.totalMesActual)} T={T} sub={C.totalMesAnterior>0?fmtPct(pctChange(C.totalMesActual,C.totalMesAnterior))+" vs mes ant.":undefined} color={T.accent} colorBg={T.accentBg}/>
       <KpiCard icon={Truck} label="Viajes mes" value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={`Corte día ${C.dayOfMonth}: ${C.viajesCorteActual} vs ${C.viajesCorteAnterior}`} color={T.green} colorBg={T.greenBg}/>
       <KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} sub={Object.keys(C.saldosBancos||{}).length+" bancos"} color={T.teal} colorBg={T.tealBg}/>
-      <KpiCard icon={Gauge} label="Días de caja" value={C.diasCaja!==null?`${C.diasCaja} días`:"—"} T={T} sub={C.burnDiario>0?`Quemado diario: ${fmtM(C.burnDiario)}`:"Sin compromisos"} color={C.diasCaja===null?T.txM:C.diasCaja>=45?T.green:C.diasCaja>=20?T.amber:T.red} colorBg={C.diasCaja===null?T.bg3:C.diasCaja>=45?T.greenBg:C.diasCaja>=20?T.amberBg:T.redBg}/>
+      <KpiCard icon={Gauge} label="Liquidez 30d" value={C.coberturaRatio30!==null?`${C.coberturaRatio30.toFixed(2)}x`:"—"} T={T} sub={C.coberturaRatio30!==null?`Caja+DAPs ${fmtM(C.liquidez30)} vs compromisos ${fmtM(C.comp30)}`:"Sin compromisos en 30 días"} color={C.coberturaRatio30===null?T.txM:C.coberturaRatio30>=1.2?T.green:C.coberturaRatio30>=1?T.amber:T.red} colorBg={C.coberturaRatio30===null?T.bg3:C.coberturaRatio30>=1.2?T.greenBg:C.coberturaRatio30>=1?T.amberBg:T.redBg}/>
       <KpiCard icon={PiggyBank} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.purple} colorBg={T.purpleBg}/>
     </div>
 
-    {/* KPIs fila 2 — incluye impacto MEPCO y margen */}
+    {/* KPIs fila 2 — proyección próximo mes + MEPCO + margen */}
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+      <KpiCard
+        icon={TrendingUp}
+        label={`Fact. proyectada ${C.curMonth<11?MESES[C.curMonth+1]:"Ene"}`}
+        value={C.proyMesSiguientePorViajes>0?fmtM(C.proyMesSiguientePorViajes):"—"}
+        T={T}
+        sub={C.proyMesSiguientePorViajes>0?`Basada en viajes ${MESES[C.curMonth]} × tarifa hist.`:"Sin viajes mes actual"}
+        color={T.teal} colorBg={T.tealBg}
+        badge="PRÓX. MES"
+      />
       <KpiCard
         icon={Zap}
         label="Impacto MEPCO mes"
@@ -893,6 +1053,50 @@ function VentasView({C,T,projectionMode,setProjectionMode}){
       </div>
     </div>
 
+    {/* Proyección doble: estacional vs viajes */}
+    {C.proyAnualPorViajes>0 && (() => {
+      const seasonal=proj.seasonal||0;
+      const viajes=C.proyAnualPorViajes||0;
+      const divAbs=viajes-seasonal;
+      const divPct=seasonal>0?Math.abs(divAbs)/seasonal*100:0;
+      const isDiverge=divPct>15;
+      const viajesMayor=viajes>seasonal;
+      return(
+        <SectionCard title="Proyección doble — Estacional vs. Basada en viajes" icon={Sparkles} T={T} color={T.violet} action={isDiverge?<span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:999,background:T.amberBg,color:T.amber,letterSpacing:0.4}}>⚠ DIVERGENCIA {divPct.toFixed(0)}%</span>:<span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:999,background:T.greenBg,color:T.green,letterSpacing:0.4}}>✓ CONVERGEN</span>}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(230px, 1fr))",gap:12}}>
+            <div style={{padding:"12px 14px",borderRadius:10,background:T.amberBg,border:`1px solid ${T.amber}33`}}>
+              <div style={{fontSize:10,color:T.amber,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>⚡ Estacional</div>
+              <div style={{fontSize:20,fontWeight:800,color:T.tx}}>{fmtM(seasonal)}</div>
+              <div style={{fontSize:10,color:T.txM,marginTop:2}}>Basada en patrón histórico {C.prevYear}</div>
+            </div>
+            <div style={{padding:"12px 14px",borderRadius:10,background:T.tealBg,border:`1px solid ${T.teal}33`}}>
+              <div style={{fontSize:10,color:T.teal,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>🚛 Basada en viajes</div>
+              <div style={{fontSize:20,fontWeight:800,color:T.tx}}>{fmtM(viajes)}</div>
+              <div style={{fontSize:10,color:T.txM,marginTop:2}}>Viajes ejecutados × tarifa $/viaje por cliente</div>
+            </div>
+            <div style={{padding:"12px 14px",borderRadius:10,background:isDiverge?T.redBg:T.greenBg,border:`1px solid ${isDiverge?T.red:T.green}33`}}>
+              <div style={{fontSize:10,color:isDiverge?T.red:T.green,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Δ Diferencia</div>
+              <div style={{fontSize:20,fontWeight:800,color:T.tx}}>{divAbs>=0?"+":""}{fmtM(divAbs)}</div>
+              <div style={{fontSize:10,color:T.txM,marginTop:2}}>{divPct.toFixed(1)}% de gap · {viajesMayor?"viajes anticipan más":"estacional más optimista"}</div>
+            </div>
+          </div>
+          <div style={{marginTop:12,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
+            <strong style={{color:T.tx}}>Cómo leer esto: </strong>
+            {isDiverge?
+              (viajesMayor?
+                `Los viajes ya ejecutados sugieren que el cierre será MAYOR al esperado por patrón histórico. Señal positiva temprana, posible efecto de mayor volumen o ajuste de tarifas MEPCO.`
+                :
+                `Los viajes ya ejecutados sugieren que el cierre será MENOR al esperado por patrón histórico. Señal temprana de desaceleración — revisar mix de clientes o caída operacional.`
+              )
+              :
+              `Ambos métodos convergen (diferencia ${divPct.toFixed(0)}%). Alta confianza en la proyección anual entre ${fmtM(Math.min(seasonal,viajes))} y ${fmtM(Math.max(seasonal,viajes))}.`
+            }
+            {" "}Tasa global histórica: <strong>{fmtM(C.tasaGlobal||0)}/viaje</strong>.
+          </div>
+        </SectionCard>
+      );
+    })()}
+
     {/* Gráfico principal con proyección estacional + MEPCO */}
     <SectionCard title={`Comparación mensual — ${C.curYear} vs ${C.prevYear} (con proyección)`} icon={BarChart3} T={T} color={T.accent}>
       <ResponsiveContainer width="100%" height={320}>
@@ -1003,7 +1207,7 @@ function FinanzasView({C,T}){
     <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Finanzas</h2>
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
       <KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} color={T.teal} colorBg={T.tealBg}/>
-      <KpiCard icon={Gauge} label="Días de caja" value={C.diasCaja!==null?`${C.diasCaja} días`:"—"} T={T} sub={C.burnDiario>0?`Burn diario ${fmtM(C.burnDiario)}`:""} color={C.diasCaja===null?T.txM:C.diasCaja>=45?T.green:C.diasCaja>=20?T.amber:T.red} colorBg={C.diasCaja===null?T.bg3:C.diasCaja>=45?T.greenBg:C.diasCaja>=20?T.amberBg:T.redBg}/>
+      <KpiCard icon={Gauge} label="Liquidez 30d" value={C.coberturaRatio30!==null?`${C.coberturaRatio30.toFixed(2)}x`:"—"} T={T} sub={C.coberturaRatio30!==null?`${fmtM(C.liquidez30)} vs ${fmtM(C.comp30)} compromisos`:""} color={C.coberturaRatio30===null?T.txM:C.coberturaRatio30>=1.2?T.green:C.coberturaRatio30>=1?T.amber:T.red} colorBg={C.coberturaRatio30===null?T.bg3:C.coberturaRatio30>=1.2?T.greenBg:C.coberturaRatio30>=1?T.amberBg:T.redBg}/>
       <KpiCard icon={Target} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.green} colorBg={T.greenBg}/>
       <KpiCard icon={Calendar} label="Compromisos mes" value={fmtM(C.totalCompromisosMes)} T={T} sub={`Guardado: ${fmtM(C.totalGuardadoMes)}`} color={T.amber} colorBg={T.amberBg}/>
     </div>
@@ -1016,6 +1220,38 @@ function FinanzasView({C,T}){
       <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:`1px solid ${T.border}`}}><span style={{fontSize:13,fontWeight:600,color:T.tx}}>Total DAPs vigentes</span><span style={{fontSize:13,fontWeight:700,color:T.tx}}>{fmtM(C.totalDAP)}</span></div>
       <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:T.txM}}>Ganancia total DAPs</span><span style={{fontSize:12,fontWeight:600,color:T.green}}>{fmtM(C.gananciaDAP)}</span></div>
     </SectionCard>
+
+    <SectionCard title="Cobertura de liquidez — próximas 4 semanas" icon={Gauge} T={T} color={T.teal} action={<span style={{fontSize:10,color:T.txD,fontStyle:"italic"}}>Caja inicial + DAPs que vencen vs compromisos</span>}>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr>{["Semana","Período","Caja inicial","DAPs que vencen","Ingresos","Compromisos","Neto","Ratio"].map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i<=1?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+          <tbody>
+            {(C.coberturaSemanas||[]).map((s,i)=>{
+              const rc=s.ratio;
+              const ratioColor=rc===null?T.txD:rc>=1.2?T.green:rc>=1?T.amber:T.red;
+              const ratioBg=rc===null?"transparent":rc>=1.2?T.greenBg:rc>=1?T.amberBg:T.redBg;
+              return(
+                <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                  <td style={{padding:"9px 10px",color:T.tx,fontWeight:600}}>S{s.semana}{i===0&&<span style={{marginLeft:6,fontSize:9,padding:"2px 6px",borderRadius:4,background:T.accentBg,color:T.accent,fontWeight:700}}>ACTUAL</span>}</td>
+                  <td style={{padding:"9px 10px",color:T.txM,fontSize:11}}>{s.label}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",color:s.cajaInicio>0?T.tx:T.txD}}>{fmtM(s.cajaInicio)}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",color:s.dapVence>0?T.green:T.txD,fontWeight:s.dapVence>0?600:400}}>{s.dapCount>0?`${fmtM(s.dapVence)} (${s.dapCount})`:"—"}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",color:T.tx,fontWeight:600}}>{fmtM(s.ingresos)}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",color:T.tx}}>{s.compCount>0?`${fmtM(s.compromisos)} (${s.compCount})`:"—"}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",color:s.neto>=0?T.green:T.red,fontWeight:700}}>{s.neto>=0?"+":""}{fmtM(s.neto)}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right"}}>{rc!==null?<span style={{background:ratioBg,color:ratioColor,padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:700}}>{rc.toFixed(2)}x</span>:<span style={{color:T.txD}}>—</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{marginTop:10,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
+        <strong style={{color:T.tx}}>Lectura:</strong> la semana actual usa toda la caja. Semanas siguientes solo disponen de caja remanente + DAPs que vencen esa semana.
+        Ratio = ingresos / compromisos. <span style={{color:T.green,fontWeight:600}}>≥1.20x verde</span> · <span style={{color:T.amber,fontWeight:600}}>1.00-1.20x amarillo</span> · <span style={{color:T.red,fontWeight:600}}>&lt;1.00x rojo</span>.
+      </div>
+    </SectionCard>
+
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
       <SectionCard title="Saldos bancarios" icon={Building2} T={T} color={T.teal}><MiniTable T={T} headers={["Banco","Saldo"]} rows={[...Object.entries(C.saldosBancos||{}).sort((a,b)=>b[1]-a[1]).map(([banco,saldo])=>[banco,fmtFull(saldo)]),["TOTAL",fmtFull(C.totalCaja)]]}/></SectionCard>
       <SectionCard title="Fondos mutuos" icon={TrendingUp} T={T} color={T.purple}><MiniTable T={T} headers={["Fondo","Admin.","Invertido","Actual","Rent. %"]} rows={(C.fondosSaldos||[]).map(r=>[r.fondo,r.admin,fmtM(r.invertido),fmtM(r.actual),r.rentPct])}/>{C.totalFondos>0&&(<div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",borderTop:`1px solid ${T.border}`,marginTop:8}}><span style={{fontSize:12,fontWeight:600,color:T.tx}}>Total FF.MM.</span><span style={{fontSize:12,fontWeight:700,color:T.tx}}>{fmtM(C.totalFondos)}</span></div>)}</SectionCard>
