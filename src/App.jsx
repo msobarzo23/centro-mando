@@ -871,15 +871,19 @@ function HomeView({C,T,setTab}){
   const fecha=getFechaLarga();
 
   // Datos del chart con proyección estacional + proyección por viajes
+  // proyectadoActual = solo para el mes en curso (se apila con real)
+  // proyectadoFuturo = para meses posteriores (barra sola, sin apilar)
   const chartData=(C.ventasPorMesConProyeccion||[]).map((m,i)=>{
     const proyV=(C.facturacionProyectadaPorViajes||[])[i]||0;
-    // Para meses futuros (sin data real o parcial), mostrar también la proyección por viajes
-    // Solo si es significativa (>0) y el mes no está cerrado
     const showViajes=i>=C.curMonth && proyV>0;
+    const esMesActual=i===C.curMonth;
+    const esMesFuturo=i>C.curMonth;
+    const proyectadoVal=m.proyectado!==null?m.proyectado/1e6:null;
     return {
       mes:MESES[i],
       real:m.actual>0?m.actual/1e6:null,
-      proyectado:m.proyectado!==null?m.proyectado/1e6:null,
+      proyectadoActual:esMesActual?proyectadoVal:null,
+      proyectadoFuturo:esMesFuturo?proyectadoVal:null,
       anterior:m.anterior>0?m.anterior/1e6:null,
       proyViajes:showViajes?proyV/1e6:null,
     };
@@ -954,8 +958,9 @@ function HomeView({C,T,setTab}){
           <Tooltip content={<ChartTooltip T={T}/>} formatter={(v)=>v!=null?`$${v.toFixed(1)}M`:"-"}/>
           <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
           <Bar dataKey="anterior" fill={T.txD} opacity={0.4} radius={[3,3,0,0]} name={String(C.prevYear)}/>
-          <Bar dataKey="real" fill={T.accent} radius={[3,3,0,0]} name={`${C.curYear} Real`}/>
-          <Bar dataKey="proyectado" fill={T.amber} radius={[3,3,0,0]} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" name={`Proyectado estacional`}/>
+          <Bar dataKey="real" stackId="curr" fill={T.accent} radius={[3,3,0,0]} name={`${C.curYear} Real`}/>
+          <Bar dataKey="proyectadoActual" stackId="curr" fill={T.amber} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" radius={[3,3,0,0]} name={`Falta facturar mes`}/>
+          <Bar dataKey="proyectadoFuturo" fill={T.amber} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" radius={[3,3,0,0]} name={`Proyectado estacional`}/>
           <Line type="monotone" dataKey="proyViajes" stroke={T.teal} strokeWidth={2.5} dot={{fill:T.teal,r:4}} connectNulls={false} name={`Proyectado por viajes`}/>
           {C.curYear===2026 && (
             <ReferenceLine x={MESES[MEPCO_ADJUSTMENT_MONTH-1]} stroke={T.violet} strokeDasharray="4 3" strokeWidth={2} label={{value:"⚡ MEPCO",position:"top",fill:T.violet,fontSize:10,fontWeight:700}}/>
@@ -1011,14 +1016,18 @@ function VentasView({C,T,projectionMode,setProjectionMode}){
     {id:"lineal",label:"Lineal",desc:"Promedio simple × 12"},
   ];
 
-  // Chart data con proyección por mes (estacional + por viajes)
+  // Chart data con proyección por mes (estacional apilada solo mes actual + línea viajes)
   const chartDataProj=(C.ventasPorMesConProyeccion||[]).map((m,i)=>{
     const proyV=(C.facturacionProyectadaPorViajes||[])[i]||0;
     const showViajes=i>=C.curMonth && proyV>0;
+    const esMesActual=i===C.curMonth;
+    const esMesFuturo=i>C.curMonth;
+    const proyectadoVal=m.proyectado!==null?m.proyectado/1e6:null;
     return{
       mes:MESES[i],
       real:m.actual>0?m.actual/1e6:null,
-      proyectado:m.proyectado!==null?m.proyectado/1e6:null,
+      proyectadoActual:esMesActual?proyectadoVal:null,
+      proyectadoFuturo:esMesFuturo?proyectadoVal:null,
       anterior:m.anterior>0?m.anterior/1e6:null,
       proyViajes:showViajes?proyV/1e6:null,
     };
@@ -1176,8 +1185,9 @@ function VentasView({C,T,projectionMode,setProjectionMode}){
           <Tooltip content={<ChartTooltip T={T}/>} formatter={(v)=>v!=null?`$${v.toFixed(1)}M`:"-"}/>
           <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
           <Bar dataKey="anterior" fill={T.txD} opacity={0.45} radius={[3,3,0,0]} name={String(C.prevYear)}/>
-          <Bar dataKey="real" fill={T.accent} radius={[3,3,0,0]} name={`${C.curYear} Real`}/>
-          <Bar dataKey="proyectado" fill={T.amber} fillOpacity={0.55} radius={[3,3,0,0]} name={`Estacional`}/>
+          <Bar dataKey="real" stackId="curr" fill={T.accent} radius={[3,3,0,0]} name={`${C.curYear} Real`}/>
+          <Bar dataKey="proyectadoActual" stackId="curr" fill={T.amber} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" radius={[3,3,0,0]} name={`Falta facturar mes`}/>
+          <Bar dataKey="proyectadoFuturo" fill={T.amber} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" radius={[3,3,0,0]} name={`Estacional`}/>
           <Line type="monotone" dataKey="proyViajes" stroke={T.teal} strokeWidth={2.5} dot={{fill:T.teal,r:4}} connectNulls={false} name={`Por viajes`}/>
           {C.curYear===2026 && (
             <ReferenceLine x={MESES[MEPCO_ADJUSTMENT_MONTH-1]} stroke={T.violet} strokeDasharray="4 3" strokeWidth={2} label={{value:"⚡ Ajuste MEPCO",position:"top",fill:T.violet,fontSize:10,fontWeight:700}}/>
