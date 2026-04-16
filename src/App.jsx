@@ -111,7 +111,26 @@ const TABS=[{id:"home",label:"Inicio",icon:Activity},{id:"ventas",label:"Ventas"
 // COMPONENTES BASE
 // ═════════════════════════════════════════════════════════════════════════════
 
-const KpiCard=({icon:Icon,label,value,sub,color,colorBg,T,badge})=>(<div style={{background:T.card,borderRadius:14,padding:"16px 18px",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",gap:8,minWidth:0,flex:"1 1 160px",position:"relative",overflow:"hidden"}}><div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg, ${color}, transparent 70%)`}}/><div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{background:colorBg,borderRadius:8,padding:6,display:"flex"}}><Icon size={16} color={color}/></div><span style={{fontSize:11,color:T.txM,fontWeight:500,letterSpacing:0.3}}>{label}</span></div>{badge&&<span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:999,background:colorBg,color,letterSpacing:0.5}}>{badge}</span>}</div><div style={{fontSize:22,fontWeight:700,color:T.tx,letterSpacing:-0.5}}>{value}</div>{sub&&<div style={{fontSize:12,color:sub.startsWith("+")?T.green:sub.startsWith("-")?T.red:T.txM}}>{sub}</div>}</div>);
+const KpiCard=({icon:Icon,label,value,sub,color,colorBg,T,badge,tooltip})=>{
+  const [hover,setHover]=useState(false);
+  return(<div onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)} style={{background:T.card,borderRadius:14,padding:"16px 18px",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",gap:8,minWidth:0,flex:"1 1 160px",position:"relative",overflow:"visible",cursor:tooltip?"help":"default"}}>
+    <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg, ${color}, transparent 70%)`,borderRadius:"14px 14px 0 0"}}/>
+    <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"space-between"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{background:colorBg,borderRadius:8,padding:6,display:"flex"}}><Icon size={16} color={color}/></div>
+        <span style={{fontSize:11,color:T.txM,fontWeight:500,letterSpacing:0.3,display:"flex",alignItems:"center",gap:4}}>{label}{tooltip&&<span style={{fontSize:10,color:T.txD,marginLeft:2}}>ⓘ</span>}</span>
+      </div>
+      {badge&&<span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:999,background:colorBg,color,letterSpacing:0.5}}>{badge}</span>}
+    </div>
+    <div style={{fontSize:22,fontWeight:700,color:T.tx,letterSpacing:-0.5}}>{value}</div>
+    {sub&&<div style={{fontSize:12,color:sub.startsWith("+")?T.green:sub.startsWith("-")?T.red:T.txM}}>{sub}</div>}
+    {tooltip&&hover&&(
+      <div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:6,background:T.tooltipBg,border:`1px solid ${color}55`,borderRadius:10,padding:"12px 14px",fontSize:11,color:T.tooltipTx,lineHeight:1.5,zIndex:50,boxShadow:"0 8px 24px rgba(0,0,0,0.25)",minWidth:260}}>
+        {tooltip}
+      </div>
+    )}
+  </div>);
+};
 
 const MiniTable=({headers,rows,T,maxRows=8})=>(<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{headers.map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i===0?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap",fontSize:11}}>{h}</th>))}</tr></thead><tbody>{rows.slice(0,maxRows).map((row,ri)=>(<tr key={ri} style={{borderBottom:`1px solid ${T.border}22`}}>{row.map((cell,ci)=>(<td key={ci} style={{padding:"7px 10px",textAlign:ci===0?"left":"right",color:T.tx,whiteSpace:"nowrap"}}>{cell}</td>))}</tr>))}</tbody></table></div>);
 
@@ -737,11 +756,11 @@ export default function App(){
     const nextWeek=new Date(now);nextWeek.setDate(nextWeek.getDate()+7);const compromisosProx=calRows.filter(r=>r.fecha>=now&&r.fecha<=nextWeek).sort((a,b)=>a.fecha-b.fecha);const totalCompromisosProx=compromisosProx.reduce((s,r)=>s+r.monto,0);
     const compromisosMes=calRows.filter(r=>r.fecha&&r.fecha.getMonth()===curMonth&&r.fecha.getFullYear()===curYear);const totalCompromisosMes=compromisosMes.reduce((s,r)=>s+r.monto,0);const totalGuardadoMes=compromisosMes.reduce((s,r)=>s+r.guardado,0);
 
-    // ══════════ COBERTURA SEMANAL — realista: caja + DAP que vence esa semana vs compromisos ══════════
-    // Semanas de lunes a domingo, las próximas 4
+    // ══════════ COBERTURA SEMANAL — realista: caja + DAP TRABAJO que vence esa semana vs compromisos ══════════
+    // Solo DAP Trabajo entra (Crédito reservado compra terrenos, Inversión es ahorro)
     const startOfWeek=(d)=>{const day=d.getDay();const diff=d.getDate()-day+(day===0?-6:1);return new Date(d.getFullYear(),d.getMonth(),diff);};
     const weekStart0=startOfWeek(now);
-    const dapVigentes=(data.finDAP||[]).filter(r=>{const v=(r.Vigente||r.vigente||"").toString().toLowerCase();return v==="si"||v==="sí"||v==="yes";}).map(r=>({vencimiento:parseDate(r.Vencimiento||r.vencimiento),montoFinal:parseNum(r["Monto Final"]||r.MontoFinal||r.monto_final)||parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),banco:r.Banco||r.banco})).filter(r=>r.vencimiento);
+    const dapVigentes=(data.finDAP||[]).filter(r=>{const v=(r.Vigente||r.vigente||"").toString().toLowerCase();return v==="si"||v==="sí"||v==="yes";}).map(r=>({vencimiento:parseDate(r.Vencimiento||r.vencimiento),montoFinal:parseNum(r["Monto Final"]||r.MontoFinal||r.monto_final)||parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),banco:r.Banco||r.banco,tipo:getDapType(r)})).filter(r=>r.vencimiento);
     const coberturaSemanas=[];
     let cajaRestante=totalCaja;
     for(let w=0;w<4;w++){
@@ -749,7 +768,8 @@ export default function App(){
       const we=new Date(ws); we.setDate(we.getDate()+6);we.setHours(23,59,59,999);
       const compSemana=calRows.filter(r=>r.fecha>=ws&&r.fecha<=we);
       const compMonto=compSemana.reduce((s,r)=>s+r.monto,0);
-      const dapSemana=dapVigentes.filter(r=>r.vencimiento>=ws&&r.vencimiento<=we);
+      // Solo DAP Trabajo aporta a la liquidez operativa semanal
+      const dapSemana=dapVigentes.filter(r=>r.tipo==="trabajo"&&r.vencimiento>=ws&&r.vencimiento<=we);
       const dapMonto=dapSemana.reduce((s,r)=>s+r.montoFinal,0);
       // Caja disponible al inicio de la semana: solo la tenemos en w=0, luego se arrastra lo que sobró
       const cajaInicio = w===0 ? cajaRestante : cajaRestante;
@@ -771,12 +791,24 @@ export default function App(){
         compCount:compSemana.length,
       });
     }
-    // Cobertura global próx 30d
+    // Cobertura global próx 30d — criterio "liquidez operativa del mes":
+    //   = Caja + DAP TRABAJO que vence 30d + FFMM (rescatables 1-3 días)
+    //   Excluye DAP Crédito (reservado a compra terrenos/mejoras) y DAP Inversión (ahorro largo plazo)
+    const dapVigentesConTipo=(data.finDAP||[]).filter(r=>{const v=(r.Vigente||r.vigente||"").toString().toLowerCase();return v==="si"||v==="sí"||v==="yes";}).map(r=>({vencimiento:parseDate(r.Vencimiento||r.vencimiento),montoFinal:parseNum(r["Monto Final"]||r.MontoFinal||r.monto_final)||parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),banco:r.Banco||r.banco,tipo:getDapType(r)})).filter(r=>r.vencimiento);
     const next30=new Date(now);next30.setDate(next30.getDate()+30);
     const comp30=calRows.filter(r=>r.fecha>=now&&r.fecha<=next30).reduce((s,r)=>s+r.monto,0);
-    const dap30=dapVigentes.filter(r=>r.vencimiento>=now&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
-    const liquidez30 = totalCaja + dap30;
+    // Desglose DAP 30d por tipo (para tooltip)
+    const dapTrabajoVence30=dapVigentesConTipo.filter(r=>r.tipo==="trabajo"&&r.vencimiento>=now&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
+    const dapCreditoVence30=dapVigentesConTipo.filter(r=>r.tipo==="credito"&&r.vencimiento>=now&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
+    const dapInversionVence30=dapVigentesConTipo.filter(r=>r.tipo==="inversion"&&r.vencimiento>=now&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
+    const dap30=dapTrabajoVence30+dapCreditoVence30+dapInversionVence30; // total DAPs 30d (para referencia)
+    // Liquidez operativa real: solo caja + DAP trabajo + FFMM
+    const liquidez30 = totalCaja + dapTrabajoVence30 + totalFondos;
+    // Además, colchón si se necesitara: + DAP inversión (DAP crédito NO, está amarrado a proyectos)
+    const colchonAdicional30 = dapInversionVence30;
+    const liquidez30Total = liquidez30 + colchonAdicional30;
     const coberturaRatio30 = comp30>0 ? liquidez30/comp30 : null;
+    const coberturaRatio30ConColchon = comp30>0 ? liquidez30Total/comp30 : null;
     const primeraSemanaCritica = coberturaSemanas.find(s=>s.ratio!==null && s.ratio<1);
 
     // ══════════ MARGEN MES ESTIMADO ══════════
@@ -815,7 +847,7 @@ export default function App(){
     const creditoMesEstimado=creditoValorCuota;
     const margenMesEstimado=totalMesActual-(totalCompromisosMes+leasingMesEstimado+creditoMesEstimado);
 
-    return{totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,margenMesEstimado,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,liquidez30,comp30,dap30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,desglosePorMesFactura,comp60Total:comp30*2};
+    return{totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,margenMesEstimado,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,desglosePorMesFactura,comp60Total:comp30*2};
   },[data]);
 
   if(loading&&!computed){return(<div style={{background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:T.tx,fontFamily:"'Inter','SF Pro Display',system-ui,sans-serif"}}><div style={{textAlign:"center"}}><RefreshCw size={32} color={T.accent} style={{animation:"spin 1s linear infinite"}}/><p style={{marginTop:16,color:T.txM}}>Cargando datos...</p><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div></div>);}
@@ -915,7 +947,20 @@ function HomeView({C,T,setTab}){
       <KpiCard icon={DollarSign} label="Facturación mes" value={fmtM(C.totalMesActual)} T={T} sub={C.totalMesAnterior>0?fmtPct(pctChange(C.totalMesActual,C.totalMesAnterior))+" vs mes ant.":undefined} color={T.accent} colorBg={T.accentBg}/>
       <KpiCard icon={Truck} label="Viajes mes" value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={`Corte día ${C.dayOfMonth}: ${C.viajesCorteActual} vs ${C.viajesCorteAnterior}`} color={T.green} colorBg={T.greenBg}/>
       <KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} sub={Object.keys(C.saldosBancos||{}).length+" bancos"} color={T.teal} colorBg={T.tealBg}/>
-      <KpiCard icon={Gauge} label="Liquidez 30d" value={C.coberturaRatio30!==null?`${C.coberturaRatio30.toFixed(2)}x`:"—"} T={T} sub={C.coberturaRatio30!==null?`Caja+DAPs ${fmtM(C.liquidez30)} vs compromisos ${fmtM(C.comp30)}`:"Sin compromisos en 30 días"} color={C.coberturaRatio30===null?T.txM:C.coberturaRatio30>=1.2?T.green:C.coberturaRatio30>=1?T.amber:T.red} colorBg={C.coberturaRatio30===null?T.bg3:C.coberturaRatio30>=1.2?T.greenBg:C.coberturaRatio30>=1?T.amberBg:T.redBg}/>
+      <KpiCard icon={Gauge} label="Liquidez 30d" value={C.coberturaRatio30!==null?`${C.coberturaRatio30.toFixed(2)}x`:"—"} T={T} sub={C.coberturaRatio30!==null?`${fmtM(C.liquidez30)} vs compromisos ${fmtM(C.comp30)}`:"Sin compromisos en 30 días"} color={C.coberturaRatio30===null?T.txM:C.coberturaRatio30>=1.2?T.green:C.coberturaRatio30>=1?T.amber:T.red} colorBg={C.coberturaRatio30===null?T.bg3:C.coberturaRatio30>=1.2?T.greenBg:C.coberturaRatio30>=1?T.amberBg:T.redBg}
+        tooltip={<div>
+          <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Desglose Liquidez operativa 30d</div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Caja bancaria</span><strong>{fmtM(C.totalCaja)}</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>+ DAP Trabajo (vence 30d)</span><strong>{fmtM(C.dapTrabajoVence30||0)}</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>+ Fondos mutuos (rescatables)</span><strong>{fmtM(C.totalFondos)}</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>= Liquidez disponible</span><strong>{fmtM(C.liquidez30)}</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>÷ Compromisos 30d</span><strong>{fmtM(C.comp30)}</strong></div>
+          <div style={{fontSize:10,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
+            Excluye: DAP Crédito ({fmtM(C.dapCreditoVence30||0)} en 30d, reservado a compra de terrenos) y DAP Inversión ({fmtM(C.dapInversionVence30||0)} en 30d, ahorro largo plazo).
+            {C.colchonAdicional30>0&&<><br/>Colchón adicional si emergencia (DAP Inv. 30d): <strong>{fmtM(C.colchonAdicional30)}</strong> → ratio total {C.coberturaRatio30ConColchon?.toFixed(2)}x</>}
+          </div>
+        </div>}
+      />
       <KpiCard icon={PiggyBank} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.purple} colorBg={T.purpleBg}/>
     </div>
 
@@ -1287,7 +1332,19 @@ function FinanzasView({C,T}){
     <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Finanzas</h2>
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
       <KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} color={T.teal} colorBg={T.tealBg}/>
-      <KpiCard icon={Gauge} label="Liquidez 30d" value={C.coberturaRatio30!==null?`${C.coberturaRatio30.toFixed(2)}x`:"—"} T={T} sub={C.coberturaRatio30!==null?`${fmtM(C.liquidez30)} vs ${fmtM(C.comp30)} compromisos`:""} color={C.coberturaRatio30===null?T.txM:C.coberturaRatio30>=1.2?T.green:C.coberturaRatio30>=1?T.amber:T.red} colorBg={C.coberturaRatio30===null?T.bg3:C.coberturaRatio30>=1.2?T.greenBg:C.coberturaRatio30>=1?T.amberBg:T.redBg}/>
+      <KpiCard icon={Gauge} label="Liquidez 30d" value={C.coberturaRatio30!==null?`${C.coberturaRatio30.toFixed(2)}x`:"—"} T={T} sub={C.coberturaRatio30!==null?`${fmtM(C.liquidez30)} vs ${fmtM(C.comp30)} compromisos`:""} color={C.coberturaRatio30===null?T.txM:C.coberturaRatio30>=1.2?T.green:C.coberturaRatio30>=1?T.amber:T.red} colorBg={C.coberturaRatio30===null?T.bg3:C.coberturaRatio30>=1.2?T.greenBg:C.coberturaRatio30>=1?T.amberBg:T.redBg}
+        tooltip={<div>
+          <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Desglose Liquidez operativa 30d</div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Caja bancaria</span><strong>{fmtM(C.totalCaja)}</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>+ DAP Trabajo (vence 30d)</span><strong>{fmtM(C.dapTrabajoVence30||0)}</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>+ Fondos mutuos</span><strong>{fmtM(C.totalFondos)}</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>= Liquidez disponible</span><strong>{fmtM(C.liquidez30)}</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>÷ Compromisos 30d</span><strong>{fmtM(C.comp30)}</strong></div>
+          <div style={{fontSize:10,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
+            Excluye DAP Crédito (compra terrenos) e Inversión (ahorro largo plazo).
+          </div>
+        </div>}
+      />
       <KpiCard icon={Target} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.green} colorBg={T.greenBg}/>
       <KpiCard icon={Calendar} label="Compromisos mes" value={fmtM(C.totalCompromisosMes)} T={T} sub={`Guardado: ${fmtM(C.totalGuardadoMes)}`} color={T.amber} colorBg={T.amberBg}/>
     </div>
@@ -1327,7 +1384,7 @@ function FinanzasView({C,T}){
         </table>
       </div>
       <div style={{marginTop:10,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
-        <strong style={{color:T.tx}}>Lectura:</strong> la semana actual usa toda la caja. Semanas siguientes solo disponen de caja remanente + DAPs que vencen esa semana.
+        <strong style={{color:T.tx}}>Lectura:</strong> la semana actual usa toda la caja. Semanas siguientes solo disponen de caja remanente + <strong>DAP Trabajo</strong> que vence esa semana (DAP Crédito e Inversión no cuentan — están amarrados a compra de terrenos y ahorro largo plazo).
         Ratio = ingresos / compromisos. <span style={{color:T.green,fontWeight:600}}>≥1.20x verde</span> · <span style={{color:T.amber,fontWeight:600}}>1.00-1.20x amarillo</span> · <span style={{color:T.red,fontWeight:600}}>&lt;1.00x rojo</span>.
       </div>
     </SectionCard>
