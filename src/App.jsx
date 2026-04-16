@@ -578,19 +578,20 @@ export default function App(){
     const viajesPorMes=[];for(let m=0;m<12;m++){const rows=viajesRows.filter(r=>r._date.getMonth()===m&&r._date.getFullYear()===curYear);viajesPorMes.push({mes:MESES[m],total:rows.length});}
 
     // ══════════ PROYECCIÓN POR VIAJES (lag 1 mes: viajes de mes N → facturación mes N+1) ══════════
+    // ÍNDICES: todos los meses se manejan 0-based (Ene=0, Dic=11)
     // Estrategia: aprender tasa $/viaje por cliente del histórico 2025, aplicarla a viajes 2026
     // Fallback a tasa global cuando cliente tiene <3 meses de histórico
     const normClienteKey=(s)=>normName(s).replace(/\s+/g," ").trim();
 
-    // Construimos dos mapas históricos año anterior:
-    //   viajesByClienteMes[clienteKey][monthIndex] = count
-    //   ventasByClienteMes[clienteKey][monthIndex] = $
+    // Mapas año anterior, índices 0-based:
+    //   viajesByClienteMesPrev[clienteKey][m] = # viajes mes m año anterior
+    //   ventasByClienteMesPrev[clienteKey][m] = $ facturación mes m año anterior
     const viajesByClienteMesPrev={};
     const ventasByClienteMesPrev={};
     viajesRows.forEach(r=>{
       if(r._date.getFullYear()!==prevYear)return;
       const k=normClienteKey(r._cliente);if(!k)return;
-      const m=r._date.getMonth();
+      const m=r._date.getMonth(); // 0-based
       if(!viajesByClienteMesPrev[k])viajesByClienteMesPrev[k]=Array(12).fill(0);
       viajesByClienteMesPrev[k][m]+=1;
     });
@@ -598,78 +599,89 @@ export default function App(){
       if(r._date.getFullYear()!==prevYear)return;
       const rawName=r["RAZON SOCIAL"]||r["Razon Social"]||r.razon_social||"";
       const k=normClienteKey(rawName);if(!k)return;
-      const m=r._date.getMonth();
+      const m=r._date.getMonth(); // 0-based
       if(!ventasByClienteMesPrev[k])ventasByClienteMesPrev[k]=Array(12).fill(0);
       ventasByClienteMesPrev[k][m]+=r._neto;
     });
 
-    // Tasa $/viaje por cliente = (suma ventas año ant.) / (suma viajes del mes ANTERIOR al de la venta, año ant.)
-    // Es decir, si el lag es 1 mes: ventas de febrero se explican con viajes de enero.
+    // Tasa $/viaje por cliente: suma ventas mes m+1 / suma viajes mes m (lag 1 mes)
     const tasaPorCliente={};
     let globalVentasLagged=0, globalViajesLagged=0;
     Object.keys(viajesByClienteMesPrev).forEach(k=>{
-      const vj=viajesByClienteMesPrev[k];
-      const vt=ventasByClienteMesPrev[k]||Array(12).fill(0);
-      let sumV=0,sumT=0,mesesConData=0;
-      for(let m=0;m<11;m++){ // viajes mes m → ventas mes m+1
+      const vj=viajesByClienteMesPrev[k]; // viajes
+      const vt=ventasByClienteMesPrev[k]||Array(12).fill(0); // ventas
+      let sumViajes=0, sumVentas=0, mesesConData=0;
+      // Para cada par (mes viajes, mes ventas = mes viajes + 1)
+      for(let m=0;m<11;m++){ // m es índice del mes de viajes; las ventas van a m+1
         if(vj[m]>0 && vt[m+1]>0){
-          sumT+=vj[m];
-          sumV+=vt[m+1];
+          sumViajes+=vj[m];
+          sumVentas+=vt[m+1];
           mesesConData++;
         }
       }
-      if(mesesConData>=3 && sumT>0){
-        tasaPorCliente[k]={tasa:sumV/sumT,meses:mesesConData,confianza:"alta"};
-      }else if(mesesConData>=1 && sumT>0){
-        tasaPorCliente[k]={tasa:sumV/sumT,meses:mesesConData,confianza:"baja"};
+      if(mesesConData>=3 && sumViajes>0){
+        tasaPorCliente[k]={tasa:sumVentas/sumViajes,meses:mesesConData,confianza:"alta"};
+      }else if(mesesConData>=1 && sumViajes>0){
+        tasaPorCliente[k]={tasa:sumVentas/sumViajes,meses:mesesConData,confianza:"baja"};
       }
-      if(sumT>0){globalVentasLagged+=sumV;globalViajesLagged+=sumT;}
+      if(sumViajes>0){globalVentasLagged+=sumVentas;globalViajesLagged+=sumViajes;}
     });
     const tasaGlobal=globalViajesLagged>0?globalVentasLagged/globalViajesLagged:0;
 
-    // Aplicamos la tasa: viajes del mes N (año actual) → facturación esperada mes N+1
-    // Para cada mes del año actual, sumamos viajes por cliente y calculamos venta proyectada
+    // Aplicamos la tasa: viajes del mes mV (año actual) → facturación esperada mes mV+1
+    // facturacionProyectadaPorViajes[mF] = proyección para el mes mF (0-based)
     const facturacionProyectadaPorViajes=Array(12).fill(0);
-    const desgloseCurMonthProy=[]; // para debug/tooltip
-    for(let mViajes=0;mViajes<12;mViajes++){
-      const mVenta=mViajes+1;
-      if(mVenta>11)continue; // dic viajes → ene año siguiente, no lo contamos
-      // agrupar viajes de ese mes del año actual por cliente
+    const desglosePorMesFactura={}; // debug por mes-factura
+    for(let mV=0;mV<12;mV++){ // mV = mes de viajes, 0-based
+      const mF=mV+1; // mes de factura esperada, 0-based
+      if(mF>11)continue; // viajes de diciembre → facturan en enero siguiente, fuera de alcance
+      // Agrupar viajes de mV (año actual) por cliente
       const viajesMesCliente={};
       viajesRows.forEach(r=>{
-        if(r._date.getFullYear()!==curYear||r._date.getMonth()!==mViajes)return;
+        if(r._date.getFullYear()!==curYear||r._date.getMonth()!==mV)return;
         const k=normClienteKey(r._cliente);if(!k)return;
         viajesMesCliente[k]=(viajesMesCliente[k]||0)+1;
       });
       let totalProy=0;
+      const desglose=[];
       Object.entries(viajesMesCliente).forEach(([k,count])=>{
         const t=tasaPorCliente[k];
         const tasa=(t&&t.tasa)||tasaGlobal;
         const aporte=count*tasa;
         totalProy+=aporte;
-        if(mVenta===curMonth){
-          desgloseCurMonthProy.push({cliente:k,viajes:count,tasa,aporte,confianza:t?t.confianza:"global"});
-        }
+        desglose.push({cliente:k,viajes:count,tasa,aporte,confianza:t?t.confianza:"global"});
       });
-      facturacionProyectadaPorViajes[mVenta]=totalProy;
+      facturacionProyectadaPorViajes[mF]=totalProy;
+      desglosePorMesFactura[mF]=desglose.sort((a,b)=>b.aporte-a.aporte);
     }
-    // Proyección del mes actual y del siguiente
+    // Proyección del mes actual (curMonth, 0-based) y del siguiente
     const proyMesActualPorViajes=facturacionProyectadaPorViajes[curMonth]||0;
     const proyMesSiguientePorViajes=curMonth<11?facturacionProyectadaPorViajes[curMonth+1]||0:0;
+    const desgloseMesActualProy=desglosePorMesFactura[curMonth]||[];
 
-    // Proyección anual por viajes: suma meses cerrados reales + proy. restante desde viajes
-    // Para meses futuros sin viajes aún, caemos a estacional
+    // Proyección anual por viajes:
+    //   - meses cerrados (< curMonth con actual>0): usar real
+    //   - mes en curso (= curMonth): max(real ya facturado, proyección por viajes)
+    //   - meses futuros (> curMonth): si hay proyección por viajes (porque hay viajes del mes anterior), usarla; si no, cae a 0 y luego mezclamos con estacional
     let proyAnualPorViajes=0;
+    let mesesConProyViajes=0;
     for(let m=0;m<12;m++){
       const real=ventasPorMesComparado[m]?.actual||0;
-      if(real>0 && m<curMonth){
+      if(m<curMonth && real>0){
         proyAnualPorViajes+=real;
       }else if(m===curMonth){
-        // mes en curso: mayor entre real ya facturado y proyección viajes
         proyAnualPorViajes+=Math.max(real,facturacionProyectadaPorViajes[m]);
       }else{
-        // futuro: proy viajes si hay, si no caerá a 0 (se sumará estacional después)
-        proyAnualPorViajes+=facturacionProyectadaPorViajes[m]||0;
+        // mes futuro: usar proyección por viajes si existe, si no caer a estacional del mes
+        const proyV=facturacionProyectadaPorViajes[m]||0;
+        if(proyV>0){
+          proyAnualPorViajes+=proyV;
+          mesesConProyViajes++;
+        }else if(projSeasonal>0 && totalPrev>0){
+          // fallback estacional
+          const w=(ventasPorMesComparado[m]?.anterior||0)/totalPrev;
+          proyAnualPorViajes+=projSeasonal*w;
+        }
       }
     }
     const vClienteMap={};viajesMesActual.forEach(r=>{vClienteMap[r._cliente]=(vClienteMap[r._cliente]||0)+1;});
@@ -803,7 +815,7 @@ export default function App(){
     const creditoMesEstimado=creditoValorCuota;
     const margenMesEstimado=totalMesActual-(totalCompromisosMes+leasingMesEstimado+creditoMesEstimado);
 
-    return{totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,margenMesEstimado,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,liquidez30,comp30,dap30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseCurMonthProy,facturacionProyectadaPorViajes,comp60Total:comp30*2};
+    return{totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,margenMesEstimado,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,liquidez30,comp30,dap30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,desglosePorMesFactura,comp60Total:comp30*2};
   },[data]);
 
   if(loading&&!computed){return(<div style={{background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:T.tx,fontFamily:"'Inter','SF Pro Display',system-ui,sans-serif"}}><div style={{textAlign:"center"}}><RefreshCw size={32} color={T.accent} style={{animation:"spin 1s linear infinite"}}/><p style={{marginTop:16,color:T.txM}}>Cargando datos...</p><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div></div>);}
@@ -858,13 +870,20 @@ function HomeView({C,T,setTab}){
   const saludo=getSaludo();
   const fecha=getFechaLarga();
 
-  // Datos del chart con proyección estacional
-  const chartData=(C.ventasPorMesConProyeccion||[]).map((m,i)=>({
-    mes:MESES[i],
-    real:m.actual>0?m.actual/1e6:null,
-    proyectado:m.proyectado!==null?m.proyectado/1e6:null,
-    anterior:m.anterior>0?m.anterior/1e6:null,
-  }));
+  // Datos del chart con proyección estacional + proyección por viajes
+  const chartData=(C.ventasPorMesConProyeccion||[]).map((m,i)=>{
+    const proyV=(C.facturacionProyectadaPorViajes||[])[i]||0;
+    // Para meses futuros (sin data real o parcial), mostrar también la proyección por viajes
+    // Solo si es significativa (>0) y el mes no está cerrado
+    const showViajes=i>=C.curMonth && proyV>0;
+    return {
+      mes:MESES[i],
+      real:m.actual>0?m.actual/1e6:null,
+      proyectado:m.proyectado!==null?m.proyectado/1e6:null,
+      anterior:m.anterior>0?m.anterior/1e6:null,
+      proyViajes:showViajes?proyV/1e6:null,
+    };
+  });
 
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
 
@@ -936,7 +955,8 @@ function HomeView({C,T,setTab}){
           <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
           <Bar dataKey="anterior" fill={T.txD} opacity={0.4} radius={[3,3,0,0]} name={String(C.prevYear)}/>
           <Bar dataKey="real" fill={T.accent} radius={[3,3,0,0]} name={`${C.curYear} Real`}/>
-          <Bar dataKey="proyectado" fill={T.amber} radius={[3,3,0,0]} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" name={`${C.curYear} Proyectado`}/>
+          <Bar dataKey="proyectado" fill={T.amber} radius={[3,3,0,0]} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" name={`Proyectado estacional`}/>
+          <Line type="monotone" dataKey="proyViajes" stroke={T.teal} strokeWidth={2.5} dot={{fill:T.teal,r:4}} connectNulls={false} name={`Proyectado por viajes`}/>
           {C.curYear===2026 && (
             <ReferenceLine x={MESES[MEPCO_ADJUSTMENT_MONTH-1]} stroke={T.violet} strokeDasharray="4 3" strokeWidth={2} label={{value:"⚡ MEPCO",position:"top",fill:T.violet,fontSize:10,fontWeight:700}}/>
           )}
@@ -991,13 +1011,18 @@ function VentasView({C,T,projectionMode,setProjectionMode}){
     {id:"lineal",label:"Lineal",desc:"Promedio simple × 12"},
   ];
 
-  // Chart data con proyección por mes
-  const chartDataProj=(C.ventasPorMesConProyeccion||[]).map((m,i)=>({
-    mes:MESES[i],
-    real:m.actual>0?m.actual/1e6:null,
-    proyectado:m.proyectado!==null?m.proyectado/1e6:null,
-    anterior:m.anterior>0?m.anterior/1e6:null,
-  }));
+  // Chart data con proyección por mes (estacional + por viajes)
+  const chartDataProj=(C.ventasPorMesConProyeccion||[]).map((m,i)=>{
+    const proyV=(C.facturacionProyectadaPorViajes||[])[i]||0;
+    const showViajes=i>=C.curMonth && proyV>0;
+    return{
+      mes:MESES[i],
+      real:m.actual>0?m.actual/1e6:null,
+      proyectado:m.proyectado!==null?m.proyectado/1e6:null,
+      anterior:m.anterior>0?m.anterior/1e6:null,
+      proyViajes:showViajes?proyV/1e6:null,
+    };
+  });
 
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
     <div>
@@ -1097,6 +1122,50 @@ function VentasView({C,T,projectionMode,setProjectionMode}){
       );
     })()}
 
+    {/* Auditoría del cálculo: desglose de proyección por viajes del mes actual */}
+    {C.desgloseMesActualProy && C.desgloseMesActualProy.length>0 && (
+      <details style={{background:T.card,borderRadius:14,padding:"12px 18px",border:`1px solid ${T.border}`}}>
+        <summary style={{cursor:"pointer",fontSize:13,fontWeight:700,color:T.tx,listStyle:"none",display:"flex",alignItems:"center",gap:8}}>
+          <Sparkles size={14} color={T.teal}/>
+          Auditoría: cálculo de proyección "{MESES[C.curMonth]}" basada en viajes de {C.curMonth>0?MESES[C.curMonth-1]:"Dic"}
+          <span style={{marginLeft:"auto",fontSize:10,color:T.txD}}>▼ desplegar</span>
+        </summary>
+        <div style={{marginTop:14,overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr>{["Cliente","Viajes","Tasa $/viaje","Aporte $","Confianza"].map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i===0?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+            <tbody>
+              {C.desgloseMesActualProy.slice(0,20).map((d,i)=>{
+                const confColor=d.confianza==="alta"?T.green:d.confianza==="baja"?T.amber:T.txD;
+                const confBg=d.confianza==="alta"?T.greenBg:d.confianza==="baja"?T.amberBg:T.bg3;
+                return(
+                  <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                    <td style={{padding:"7px 10px",color:T.tx,fontWeight:500,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.cliente}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:T.tx}}>{d.viajes}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:T.txM,fontFamily:"monospace",fontSize:11}}>{fmtM(d.tasa)}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:T.tx,fontWeight:600}}>{fmtM(d.aporte)}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right"}}>
+                      <span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:999,background:confBg,color:confColor,textTransform:"uppercase"}}>{d.confianza}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr style={{borderTop:`2px solid ${T.border}`,background:T.tealBg}}>
+                <td style={{padding:"9px 10px",color:T.teal,fontWeight:800}}>▶ TOTAL PROYECCIÓN</td>
+                <td style={{padding:"9px 10px",textAlign:"right",color:T.teal,fontWeight:700}}>{C.desgloseMesActualProy.reduce((s,d)=>s+d.viajes,0)}</td>
+                <td style={{padding:"9px 10px",textAlign:"right",color:T.txD,fontSize:11}}>prom. {fmtM(C.tasaGlobal||0)}</td>
+                <td style={{padding:"9px 10px",textAlign:"right",color:T.teal,fontWeight:800}}>{fmtM(C.proyMesActualPorViajes||0)}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+          {C.desgloseMesActualProy.length>20 && <div style={{marginTop:8,fontSize:11,color:T.txD,fontStyle:"italic"}}>Mostrando top 20 de {C.desgloseMesActualProy.length} clientes</div>}
+        </div>
+        <div style={{marginTop:10,padding:"8px 12px",background:T.bg3+"44",borderRadius:8,fontSize:10,color:T.txM,lineHeight:1.5}}>
+          <strong style={{color:T.tx}}>Confianza:</strong> <span style={{color:T.green,fontWeight:600}}>Alta</span> = cliente con ≥3 meses de histórico consistente. <span style={{color:T.amber,fontWeight:600}}>Baja</span> = 1-2 meses. <span style={{color:T.txD,fontWeight:600}}>Global</span> = sin histórico, aplica tasa promedio del año anterior. Si un cliente no te cuadra (matcheo distinto entre viajes y facturación), avisa y afinamos el match.
+        </div>
+      </details>
+    )}
+
     {/* Gráfico principal con proyección estacional + MEPCO */}
     <SectionCard title={`Comparación mensual — ${C.curYear} vs ${C.prevYear} (con proyección)`} icon={BarChart3} T={T} color={T.accent}>
       <ResponsiveContainer width="100%" height={320}>
@@ -1108,7 +1177,8 @@ function VentasView({C,T,projectionMode,setProjectionMode}){
           <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
           <Bar dataKey="anterior" fill={T.txD} opacity={0.45} radius={[3,3,0,0]} name={String(C.prevYear)}/>
           <Bar dataKey="real" fill={T.accent} radius={[3,3,0,0]} name={`${C.curYear} Real`}/>
-          <Bar dataKey="proyectado" fill={T.amber} fillOpacity={0.55} radius={[3,3,0,0]} name={`${C.curYear} Proyectado (estacional)`}/>
+          <Bar dataKey="proyectado" fill={T.amber} fillOpacity={0.55} radius={[3,3,0,0]} name={`Estacional`}/>
+          <Line type="monotone" dataKey="proyViajes" stroke={T.teal} strokeWidth={2.5} dot={{fill:T.teal,r:4}} connectNulls={false} name={`Por viajes`}/>
           {C.curYear===2026 && (
             <ReferenceLine x={MESES[MEPCO_ADJUSTMENT_MONTH-1]} stroke={T.violet} strokeDasharray="4 3" strokeWidth={2} label={{value:"⚡ Ajuste MEPCO",position:"top",fill:T.violet,fontSize:10,fontWeight:700}}/>
           )}
