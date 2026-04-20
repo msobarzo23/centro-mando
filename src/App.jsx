@@ -707,6 +707,87 @@ export default function App(){
     const topClientesViajes=Object.entries(vClienteMap).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,count])=>({name,count}));
     const equipoMap={};viajesMesActual.forEach(r=>{const e=r._equipo||"Sin tipo";equipoMap[e]=(equipoMap[e]||0)+1;});
     const viajesPorEquipo=Object.entries(equipoMap).sort((a,b)=>b[1]-a[1]).map(([name,count])=>({name:name.length>25?name.slice(0,22)+"...":name,count}));
+    // ══════════ PROYECCIÓN DE VIAJES (híbrido prorrateo + estacional) ══════════
+    // Método: combina prorrateo por días calendario con patrón estacional del año anterior.
+    // Peso del prorrateo crece linealmente: día 1 = 0%, día 15 = 100%. Antes del 15 pesa más lo estacional.
+    // Anclaje: usa maxDayWithData (mismo criterio que dayOfMonth del app) no el día calendario de hoy.
+    const diasTotalesMes = new Date(curYear, curMonth + 1, 0).getDate();
+    const diasTranscurridosMes = dayOfMonth; // maxDayWithData ya calculado arriba
+    const pesoProrrateo = Math.min(diasTranscurridosMes / 15, 1);
+    const pesoEstacional = 1 - pesoProrrateo;
+
+    // Prorrateo simple: viajes actuales / días con data × días totales
+    
+    const proyViajesProrrateoSimple = diasTranscurridosMes > 0
+      ? Math.round(viajesMesActual.length / diasTranscurridosMes * diasTotalesMes)
+      : 0;
+
+    // Estacional: viajes del mismo mes año anterior (total)
+    const viajesMismoMesAnioAnt = viajesRows.filter(r =>
+      r._date.getMonth() === curMonth && r._date.getFullYear() === prevYear
+    ).length;
+    // Ajuste: si año anterior hubo N viajes ese mes y nosotros vamos a X viajes al día D,
+    // proyectamos aplicando el ratio de cómo iba el año anterior al mismo día
+    const viajesAnioAntMismoCorte = viajesRows.filter(r =>
+      r._date.getMonth() === curMonth && r._date.getFullYear() === prevYear && r._date.getDate() <= dayOfMonth
+    ).length;
+    const proyViajesEstacional = viajesAnioAntMismoCorte > 0 && viajesMismoMesAnioAnt > 0
+      ? Math.round(viajesMesActual.length * (viajesMismoMesAnioAnt / viajesAnioAntMismoCorte))
+      : (viajesMismoMesAnioAnt > 0 ? viajesMismoMesAnioAnt : proyViajesProrrateoSimple);
+
+    // Híbrido ponderado
+    const proyViajesHibrido = Math.round(
+      proyViajesProrrateoSimple * pesoProrrateo + proyViajesEstacional * pesoEstacional
+    );
+    const viajesProyectadosFaltantes = Math.max(0, proyViajesHibrido - viajesMesActual.length);
+
+    // Proyección por cliente: mismo método híbrido aplicado cliente a cliente
+    const topClientesViajesProy = (Object.entries(vClienteMap).sort((a,b)=>b[1]-a[1]).slice(0,8)).map(([name, count]) => {
+      // Viajes del mismo cliente, mismo mes, año anterior
+      const clienteViajesAnioAnt = viajesRows.filter(r =>
+        r._cliente === name &&
+        r._date.getMonth() === curMonth &&
+        r._date.getFullYear() === prevYear
+      ).length;
+      const clienteViajesAnioAntCorte = viajesRows.filter(r =>
+        r._cliente === name &&
+        r._date.getMonth() === curMonth &&
+        r._date.getFullYear() === prevYear &&
+        r._date.getDate() <= dayOfMonth
+      ).length;
+      const clienteViajesMesAnt = viajesRows.filter(r =>
+        r._cliente === name &&
+        r._date.getMonth() === (curMonth === 0 ? 11 : curMonth - 1) &&
+        r._date.getFullYear() === (curMonth === 0 ? curYear - 1 : curYear)
+      ).length;
+
+      // Prorrateo del cliente
+      const proyProrrateoCliente = diasTranscurridosMes > 0
+        ? Math.round(count / diasTranscurridosMes * diasTotalesMes)
+        : count;
+      // Estacional del cliente
+      let proyEstacionalCliente;
+      if (clienteViajesAnioAntCorte > 0 && clienteViajesAnioAnt > 0) {
+        proyEstacionalCliente = Math.round(count * (clienteViajesAnioAnt / clienteViajesAnioAntCorte));
+      } else if (clienteViajesAnioAnt > 0) {
+        proyEstacionalCliente = clienteViajesAnioAnt;
+      } else {
+        proyEstacionalCliente = proyProrrateoCliente;
+      }
+      // Híbrido del cliente
+      const proyCierreCliente = Math.round(
+        proyProrrateoCliente * pesoProrrateo + proyEstacionalCliente * pesoEstacional
+      );
+      const avancePct = proyCierreCliente > 0 ? (count / proyCierreCliente) * 100 : 100;
+
+      return {
+        name,
+        count,
+        proyCierre: Math.max(proyCierreCliente, count), // nunca menor al actual
+        avancePct: Math.min(avancePct, 100),
+        mesAnt: clienteViajesMesAnt,
+      };
+    });
 
     // ══════════ CONDUCTORES ══════════
     const contratadosSet=new Set();(data.conductoresActivos||[]).forEach(r=>{const n=normName(r.personal||r.Personal||"");if(n)contratadosSet.add(n);});
@@ -1299,6 +1380,14 @@ function VentasView({C,T,projectionMode,setProjectionMode}){
 function OperacionesView({C,T}){
   const varViajes=C.viajesMesAnteriorCount>0?pctChange(C.viajesMesActual,C.viajesMesAnteriorCount):0;
   const varCorte=C.viajesCorteAnterior>0?pctChange(C.viajesCorteActual,C.viajesCorteAnterior):0;
+
+  // Data para el gráfico con proyección apilada solo en el mes actual
+  const viajesChartData = (C.viajesPorMes||[]).map((m,i) => ({
+    mes: m.mes,
+    real: m.total,
+    proyectado: i === C.curMonth ? (C.viajesProyectadosFaltantes||0) : null,
+  }));
+
   return(<div style={{display:"flex",flexDirection:"column",gap:18}}>
     <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Operaciones</h2>
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
@@ -1306,6 +1395,26 @@ function OperacionesView({C,T}){
       <KpiCard icon={Activity} label={`Corte al día ${C.dayOfMonth}`} value={C.viajesCorteActual?.toLocaleString("es-CL")} T={T} sub={`${C.viajesCorteAnterior} mes ant. (${fmtPct(varCorte)})`} color={varCorte>=0?T.green:T.red} colorBg={varCorte>=0?T.greenBg:T.redBg}/>
       <KpiCard icon={BarChart3} label={`Viajes ${C.lastFullDayLabel}`} value={C.viajesAyer?.toLocaleString("es-CL")} T={T} sub="Último día completo" color={T.accent} colorBg={T.accentBg}/>
       <KpiCard icon={MapPin} label="KM mes actual" value={C.kmMesActual?.toLocaleString("es-CL")} T={T} color={T.teal} colorBg={T.tealBg}/>
+      <KpiCard
+        icon={Target}
+        label={`Proy. cierre ${MESES[C.curMonth]}`}
+        value={C.proyViajesHibrido?.toLocaleString("es-CL")}
+        T={T}
+        sub={`Faltan ~${C.viajesProyectadosFaltantes?.toLocaleString("es-CL")} viajes al cierre`}
+        color={T.amber}
+        colorBg={T.amberBg}
+        badge="HÍBRIDO"
+        tooltip={<div>
+          <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Método híbrido (prorrateo + estacional)</div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Avance del mes</span><strong>{C.diasTranscurridosMes}/{C.diasTotalesMes} días</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Prorrateo simple</span><strong>{C.proyViajesProrrateoSimple?.toLocaleString("es-CL")}</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Estacional (vs {C.prevYear})</span><strong>{C.proyViajesEstacional?.toLocaleString("es-CL")}</strong></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>= Proyección híbrida</span><strong>{C.proyViajesHibrido?.toLocaleString("es-CL")}</strong></div>
+          <div style={{fontSize:10,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
+            Peso del prorrateo crece linealmente del día 1 al 15. Antes del 15 pesa más el patrón estacional del año anterior.
+          </div>
+        </div>}
+      />
     </div>
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
       <KpiCard icon={Users} label="Conductores contratados" value={String(C.totalContratados||0)} T={T} color={T.accent} colorBg={T.accentBg}/>
@@ -1324,8 +1433,51 @@ function OperacionesView({C,T}){
       <div style={{marginTop:8,fontSize:11,color:T.txD,display:"flex",alignItems:"center",gap:6}}><AlertTriangle size={12}/> Se genera alerta cuando la ocupación baja del 75%</div>
     </SectionCard>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
-      <SectionCard title="Viajes por mes" icon={BarChart3} T={T} color={T.green}><ResponsiveContainer width="100%" height={200}><BarChart data={C.viajesPorMes}><CartesianGrid strokeDasharray="3 3" stroke={T.border}/><XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} width={40}/><Tooltip content={<ChartTooltip T={T} prefix="#"/>}/><Bar dataKey="total" fill={T.green} radius={[4,4,0,0]} name="Viajes"/></BarChart></ResponsiveContainer></SectionCard>
-      <SectionCard title="Top clientes por viajes" icon={Users} T={T} color={T.accent}><MiniTable T={T} headers={["Cliente","Viajes","% Part."]} rows={(C.topClientesViajes||[]).map(c=>[c.name.length>22?c.name.slice(0,20)+"...":c.name,c.count,C.viajesMesActual>0?((c.count/C.viajesMesActual)*100).toFixed(1)+"%":"0%"])}/></SectionCard>
+      <SectionCard title="Viajes por mes — con proyección de cierre" icon={BarChart3} T={T} color={T.green} action={<span style={{fontSize:10,color:T.txD,fontStyle:"italic"}}>Barra punteada: proyectado</span>}>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={viajesChartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+            <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
+            <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} width={40}/>
+            <Tooltip content={<ChartTooltip T={T} prefix="#"/>}/>
+            <Bar dataKey="real" stackId="v" fill={T.green} radius={[0,0,0,0]} name="Real"/>
+            <Bar dataKey="proyectado" stackId="v" fill={T.amber} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" radius={[4,4,0,0]} name="Falta al cierre"/>
+          </BarChart>
+        </ResponsiveContainer>
+        <div style={{marginTop:8,padding:"8px 10px",background:T.bg3+"44",borderRadius:6,fontSize:10,color:T.txM,lineHeight:1.4}}>
+          <strong style={{color:T.tx}}>{MESES[C.curMonth]}:</strong> {C.viajesMesActual?.toLocaleString("es-CL")} ejecutados + <span style={{color:T.amber,fontWeight:600}}>{C.viajesProyectadosFaltantes?.toLocaleString("es-CL")} proyectados</span> = <strong style={{color:T.tx}}>{C.proyViajesHibrido?.toLocaleString("es-CL")} al cierre</strong>
+        </div>
+      </SectionCard>
+      <SectionCard title="Top clientes por viajes" icon={Users} T={T} color={T.accent}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr>{["Cliente","Viajes","Mes ant.","Proy. cierre","Avance"].map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i===0?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+            <tbody>
+              {(C.topClientesViajesProy||[]).map((c,i)=>{
+                const deltaMes = c.mesAnt>0 ? pctChange(c.proyCierre, c.mesAnt) : 0;
+                const avanceColor = c.avancePct>=90?T.green:c.avancePct>=70?T.amber:T.red;
+                return(
+                  <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                    <td style={{padding:"7px 10px",color:T.tx,fontWeight:500,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name.length>22?c.name.slice(0,20)+"...":c.name}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:T.tx,fontWeight:600}}>{c.count.toLocaleString("es-CL")}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:T.txD,fontSize:11}}>{c.mesAnt>0?c.mesAnt.toLocaleString("es-CL"):"—"}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:T.amber,fontWeight:700}}>
+                      {c.proyCierre.toLocaleString("es-CL")}
+                      {c.mesAnt>0 && <div style={{fontSize:9,color:deltaMes>=0?T.green:T.red,fontWeight:600}}>{fmtPct(deltaMes)} vs mes ant.</div>}
+                    </td>
+                    <td style={{padding:"7px 10px",textAlign:"right"}}>
+                      <span style={{fontSize:10,fontWeight:700,color:avanceColor}}>{c.avancePct.toFixed(0)}%</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{marginTop:8,padding:"8px 10px",background:T.bg3+"44",borderRadius:6,fontSize:10,color:T.txM,lineHeight:1.4}}>
+          <strong style={{color:T.tx}}>Proy. cierre:</strong> viajes esperados al fin de mes (método híbrido por cliente). <strong style={{color:T.tx}}>Avance:</strong> % de la proyección ya ejecutado.
+        </div>
+      </SectionCard>
       <SectionCard title="Viajes por tipo de equipo" icon={Truck} T={T} color={T.purple}>{C.viajesPorEquipo?.length>0?(<ResponsiveContainer width="100%" height={200}><PieChart><Pie data={C.viajesPorEquipo} dataKey="count" cx="50%" cy="50%" outerRadius={75} innerRadius={35} paddingAngle={2} label={({count})=>`${count}`} labelLine={{stroke:T.txD}}>{C.viajesPorEquipo.map((_,i)=><Cell key={i} fill={T.chart[i%T.chart.length]}/>)}</Pie><Tooltip content={<ChartTooltip T={T} prefix="#"/>}/></PieChart></ResponsiveContainer>):<p style={{fontSize:12,color:T.txM}}>Sin datos</p>}<div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6,justifyContent:"center"}}>{(C.viajesPorEquipo||[]).slice(0,6).map((d,i)=>(<span key={i} style={{fontSize:9,color:T.txM,display:"flex",alignItems:"center",gap:3}}><span style={{width:7,height:7,borderRadius:2,background:T.chart[i%T.chart.length]}}/>{d.name}</span>))}</div></SectionCard>
     </div>
   </div>);
