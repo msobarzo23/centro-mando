@@ -1,5 +1,6 @@
 import { CircleDot, ShieldCheck, Shield, ShieldAlert } from "lucide-react";
 import { fmtPct, pctChange } from "../utils.js";
+import { UMBRAL_LIQUIDEZ_VERDE, UMBRAL_LIQUIDEZ_AMARILLA, UMBRAL_OCUPACION_VERDE, UMBRAL_OCUPACION_AMARILLA, UMBRAL_VENTAS_CAIDA_AMARILLA } from "../constants.js";
 
 function computeSemaforo(C) {
   const signals = [];
@@ -7,8 +8,8 @@ function computeSemaforo(C) {
   if (C.coberturaRatio30 !== null) {
     const r = C.coberturaRatio30;
     let s;
-    if (r >= 1.2) s = { level:"verde", text:`Liquidez 30d ${r.toFixed(2)}x` };
-    else if (r >= 1.0) s = { level:"amarillo", text:`Liquidez 30d ${r.toFixed(2)}x` };
+    if (r >= UMBRAL_LIQUIDEZ_VERDE) s = { level:"verde", text:`Liquidez 30d ${r.toFixed(2)}x` };
+    else if (r >= UMBRAL_LIQUIDEZ_AMARILLA) s = { level:"amarillo", text:`Liquidez 30d ${r.toFixed(2)}x` };
     else s = { level:"rojo", text:`Liquidez 30d ${r.toFixed(2)}x` };
     signals.push(s);
   }
@@ -17,15 +18,15 @@ function computeSemaforo(C) {
     const varPct = pctChange(C.acumCorteActual, C.acumCorteAnterior);
     let s;
     if (varPct >= 0) s = { level:"verde", text:`Ventas ${fmtPct(varPct)} vs ${C.prevYear}` };
-    else if (varPct >= -10) s = { level:"amarillo", text:`Ventas ${fmtPct(varPct)} vs ${C.prevYear}` };
+    else if (varPct >= UMBRAL_VENTAS_CAIDA_AMARILLA) s = { level:"amarillo", text:`Ventas ${fmtPct(varPct)} vs ${C.prevYear}` };
     else s = { level:"rojo", text:`Ventas ${fmtPct(varPct)} vs ${C.prevYear}` };
     signals.push(s);
   }
 
   if (C.pctOcupacionTractos > 0) {
     let s;
-    if (C.pctOcupacionTractos >= 85) s = { level:"verde", text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%` };
-    else if (C.pctOcupacionTractos >= 75) s = { level:"amarillo", text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%` };
+    if (C.pctOcupacionTractos >= UMBRAL_OCUPACION_VERDE) s = { level:"verde", text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%` };
+    else if (C.pctOcupacionTractos >= UMBRAL_OCUPACION_AMARILLA) s = { level:"amarillo", text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%` };
     else s = { level:"rojo", text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%` };
     signals.push(s);
   }

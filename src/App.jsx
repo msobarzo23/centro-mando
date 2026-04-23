@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { RefreshCw, Sun, Moon, Menu, X, Calendar, PiggyBank, TrendingDown, Users, Truck, AlertTriangle, CreditCard } from "lucide-react";
-import { CSV, AUTO_REFRESH_MIN, MESES, TABS, themes } from "./constants.js";
+import { CSV, AUTO_REFRESH_MIN, MESES, TABS, themes, COMODIN_TRACTO, COMODIN_CONDUCTOR, UMBRAL_LIQUIDEZ_AMARILLA, UMBRAL_VIAJES_ALERTA, UMBRAL_OCUPACION_ALERTA } from "./constants.js";
 import { parseNum, parseDate, normName, fmtM, pctChange, businessDaysInMonth, businessDaysElapsed } from "./utils.js";
 import { fetchCSV, fetchFinCSV, fetchRawCSV, parseLeasingResumen } from "./services/fetchData.js";
 import HomeView from "./views/HomeView.jsx";
@@ -11,15 +11,15 @@ import LeasingView from "./views/LeasingView.jsx";
 import CreditoView from "./views/CreditoView.jsx";
 import AlertasView from "./views/AlertasView.jsx";
 
-const COMODIN_TRACTO = "AA1111";
-const COMODIN_CONDUCTOR = "CONDUCTOR, TRANSPORTES BELLO";
 const MEPCO_ADJUSTMENT_MONTH = 5;
 
 export default function App() {
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("cm-theme") !== "light"; } catch { return true; } });
-  const [tab, setTab] = useState("home");
+  const [tab, setTabRaw] = useState(() => { try { return localStorage.getItem("cm-tab") || "home"; } catch { return "home"; } });
+  const setTab = useCallback((t) => { setTabRaw(t); try { localStorage.setItem("cm-tab", t); } catch {} }, []);
   const [data, setData] = useState({});
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [projectionMode, setProjectionMode] = useState("seasonal");
@@ -31,6 +31,7 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const [ventas,viajes,flotaViajes,flotaEquipos,expediciones,conductoresActivos] = await Promise.all([
         fetchCSV(CSV.ventas), fetchCSV(CSV.viajes), fetchCSV(CSV.flotaViajes),
@@ -47,9 +48,14 @@ export default function App() {
         fetchCSV(CSV.credito),
       ]);
       const leasingResumen = parseLeasingResumen(leasingResumenRaw);
+      const allEmpty = [ventas,viajes,flotaViajes,flotaEquipos,finBancos].every(d => d.length === 0);
+      if (allEmpty) setFetchError("No se pudieron cargar los datos. Verifica tu conexión o los permisos de las hojas.");
       setData({ ventas, viajes, finResumen, finBancos, finDAP, finCalendario, finFondos, flotaViajes, flotaEquipos, leasingDetalle, leasingResumen, credito, expediciones, conductoresActivos });
       setLastUpdate(new Date());
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      setFetchError("Error al conectar con las fuentes de datos. Los datos mostrados pueden estar desactualizados.");
+    }
     setLoading(false);
   }, []);
 
@@ -357,12 +363,12 @@ export default function App() {
     const alertas=[];
     calRows.filter(r=>r.falta>0&&r.fecha>=now&&r.fecha<=nextWeek).forEach(r=>{alertas.push({type:"warning",icon:Calendar,msg:`${r.concepto}: falta ${fmtM(r.falta)} para el ${r.fecha.toLocaleDateString("es-CL")}`});});
     dapProximos.filter(r=>r.vencimiento<=nextWeek).forEach(r=>{alertas.push({type:"info",icon:PiggyBank,msg:`DAP ${r.banco} por ${fmtM(r.monto)} vence el ${r.vencimiento.toLocaleDateString("es-CL")}`});});
-    if(viajesCorteAnterior>0&&viajesCorteActual<viajesCorteAnterior*0.85){alertas.push({type:"danger",icon:TrendingDown,msg:`Viajes al día ${dayOfMonth}: ${viajesCorteActual} vs ${viajesCorteAnterior} mes anterior (${pctChange(viajesCorteActual,viajesCorteAnterior).toFixed(1)}%)`});}
-    if(totalContratados>0&&pctOcupacionConductores<75){alertas.push({type:"warning",icon:Users,msg:`Ocupación conductores: ${pctOcupacionConductores.toFixed(1)}% — ${totalEnExpedicion} de ${totalContratados} en expedición`});}
-    if(totalTractocamiones>0&&pctOcupacionTractos<75){alertas.push({type:"warning",icon:Truck,msg:`Ocupación tractos prom. diario: ${pctOcupacionTractos.toFixed(1)}% — ${tractosActivosMes} de ${totalTractocamiones}`});}
-    if(totalTractocamiones>0&&pctOcupacionTractosAyer<75&&lastFullDay){alertas.push({type:"danger",icon:Truck,msg:`Ocupación tractos ${lastFullDayLabel}: ${pctOcupacionTractosAyer.toFixed(1)}% — ${tractosActivosAyer} de ${totalTractocamiones}`});}
+    if(viajesCorteAnterior>0&&viajesCorteActual<viajesCorteAnterior*UMBRAL_VIAJES_ALERTA){alertas.push({type:"danger",icon:TrendingDown,msg:`Viajes al día ${dayOfMonth}: ${viajesCorteActual} vs ${viajesCorteAnterior} mes anterior (${pctChange(viajesCorteActual,viajesCorteAnterior).toFixed(1)}%)`});}
+    if(totalContratados>0&&pctOcupacionConductores<UMBRAL_OCUPACION_ALERTA){alertas.push({type:"warning",icon:Users,msg:`Ocupación conductores: ${pctOcupacionConductores.toFixed(1)}% — ${totalEnExpedicion} de ${totalContratados} en expedición`});}
+    if(totalTractocamiones>0&&pctOcupacionTractos<UMBRAL_OCUPACION_ALERTA){alertas.push({type:"warning",icon:Truck,msg:`Ocupación tractos prom. diario: ${pctOcupacionTractos.toFixed(1)}% — ${tractosActivosMes} de ${totalTractocamiones}`});}
+    if(totalTractocamiones>0&&pctOcupacionTractosAyer<UMBRAL_OCUPACION_ALERTA&&lastFullDay){alertas.push({type:"danger",icon:Truck,msg:`Ocupación tractos ${lastFullDayLabel}: ${pctOcupacionTractosAyer.toFixed(1)}% — ${tractosActivosAyer} de ${totalTractocamiones}`});}
     if(primeraSemanaCritica){alertas.push({type:"danger",icon:AlertTriangle,msg:`Semana ${primeraSemanaCritica.label}: faltan ${fmtM(primeraSemanaCritica.falta)} por cubrir`});}
-    if(coberturaRatio30!==null&&coberturaRatio30<1){alertas.push({type:"warning",icon:AlertTriangle,msg:`Liquidez 30d insuficiente: ${fmtM(liquidez30)} vs compromisos ${fmtM(comp30)}`});}
+    if(coberturaRatio30!==null&&coberturaRatio30<UMBRAL_LIQUIDEZ_AMARILLA){alertas.push({type:"warning",icon:AlertTriangle,msg:`Liquidez 30d insuficiente: ${fmtM(liquidez30)} vs compromisos ${fmtM(comp30)}`});}
 
     // ══════════ LEASING ══════════
     const leasingDet=(data.leasingDetalle||[]).filter(r=>(r.Estado||r.estado||"").toUpperCase()==="ACTIVO");const leasingContratosActivos=leasingDet.length;const leasingTractosTotal=leasingDet.reduce((s,r)=>s+parseNum(r["N Tractos"]||r.Tractos||r.tractos),0);
@@ -404,6 +410,17 @@ export default function App() {
 
   return (
     <div style={{background:T.bg,minHeight:"100vh",fontFamily:"'Inter','SF Pro Display',system-ui,sans-serif",color:T.tx}}>
+      {loading && computed && (
+        <div style={{position:"fixed",top:0,left:0,right:0,height:3,zIndex:200,background:T.accentBg,overflow:"hidden"}}>
+          <div style={{height:"100%",background:T.accent,animation:"progressBar 1.5s ease-in-out infinite",transformOrigin:"left"}}/>
+        </div>
+      )}
+      {fetchError && (
+        <div style={{background:T.amberBg,borderBottom:`1px solid ${T.amber}44`,padding:"8px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <span style={{fontSize:12,color:T.amber}}>{fetchError}</span>
+          <button onClick={()=>setFetchError(null)} style={{background:"none",border:"none",cursor:"pointer",color:T.amber,fontSize:16,lineHeight:1,padding:"0 4px"}} title="Cerrar">×</button>
+        </div>
+      )}
       <header style={{background:T.bg2,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <button onClick={()=>setMobileMenu(!mobileMenu)} style={{background:"none",border:"none",cursor:"pointer",display:"none",color:T.tx,padding:4}} className="mobile-menu-btn">{mobileMenu?<X size={20}/>:<Menu size={20}/>}</button>
@@ -460,7 +477,7 @@ export default function App() {
         </div>
       </nav>
 
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spinning{animation:spin 1s linear infinite}@media(max-width:768px){.sidebar{display:none!important}.bottom-nav{display:block!important}.mobile-menu-btn{display:block!important}main{padding:14px 12px 80px!important}}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spinning{animation:spin 1s linear infinite}@keyframes progressBar{0%{transform:scaleX(0);opacity:1}70%{transform:scaleX(0.8);opacity:1}100%{transform:scaleX(1);opacity:0}}@media(max-width:768px){.sidebar{display:none!important}.bottom-nav{display:block!important}.mobile-menu-btn{display:block!important}main{padding:14px 12px 80px!important}}`}</style>
     </div>
   );
 }

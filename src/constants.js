@@ -27,6 +27,17 @@ export const COMODIN_CONDUCTOR = "CONDUCTOR, TRANSPORTES BELLO";
 export const MEPCO_ADJUSTMENT_MONTH = 5;
 export const MEPCO_CLIENTS_VISIBLE = ["Calidra", "CBB", "Novandino Litio", "Enaex", "Maxam", "Orica"];
 
+// Umbrales del semáforo ejecutivo
+export const UMBRAL_LIQUIDEZ_VERDE = 1.2;
+export const UMBRAL_LIQUIDEZ_AMARILLA = 1.0;
+export const UMBRAL_OCUPACION_VERDE = 85;
+export const UMBRAL_OCUPACION_AMARILLA = 75;
+export const UMBRAL_VENTAS_CAIDA_AMARILLA = -10;
+
+// Umbrales de alertas operacionales
+export const UMBRAL_VIAJES_ALERTA = 0.85;
+export const UMBRAL_OCUPACION_ALERTA = 75;
+
 export const themes = {
   dark: {
     bg:"#0b1120",bg2:"#111827",bg3:"#1e293b",card:"#151f32",tx:"#e2e8f0",txM:"#94a3b8",txD:"#64748b",
