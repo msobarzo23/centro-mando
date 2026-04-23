@@ -21,6 +21,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [timeAgo, setTimeAgo] = useState("");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [projectionMode, setProjectionMode] = useState("seasonal");
   const T = dark ? themes.dark : themes.light;
@@ -65,6 +66,19 @@ export default function App() {
     const id = setInterval(loadData, AUTO_REFRESH_MIN * 60000);
     return () => clearInterval(id);
   }, [loadData]);
+
+  useEffect(() => {
+    const compute = () => {
+      if (!lastUpdate) { setTimeAgo(""); return; }
+      const diff = Math.floor((Date.now() - lastUpdate.getTime()) / 60000);
+      if (diff === 0) setTimeAgo("actualizado ahora");
+      else if (diff === 1) setTimeAgo("hace 1 min");
+      else setTimeAgo(`hace ${diff} min`);
+    };
+    compute();
+    const id = setInterval(compute, 60000);
+    return () => clearInterval(id);
+  }, [lastUpdate]);
 
   const computed = useMemo(() => {
     if (!data.ventas) return null;
@@ -433,7 +447,11 @@ export default function App() {
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          {lastUpdate && <span style={{fontSize:10,color:T.txD}}>{lastUpdate.toLocaleTimeString("es-CL",{hour:"2-digit",minute:"2-digit"})}</span>}
+          {timeAgo && (() => {
+            const mins = lastUpdate ? Math.floor((Date.now()-lastUpdate.getTime())/60000) : 999;
+            const col = mins<5?T.green:mins<30?T.amber:T.red;
+            return <span style={{fontSize:10,color:col,fontWeight:500}}>{timeAgo}</span>;
+          })()}
           {computed && (
             <button onClick={async()=>{const{exportFullPDF}=await import("./services/exportPDF.js");exportFullPDF(computed);}} title="Exportar reporte ejecutivo PDF" style={{display:"flex",alignItems:"center",gap:5,background:T.accentBg,border:`1px solid ${T.accent}44`,borderRadius:7,cursor:"pointer",color:T.accent,padding:"4px 10px",fontSize:11,fontWeight:600}}>
               <FileDown size={14}/><span className="pdf-btn-label">PDF</span>

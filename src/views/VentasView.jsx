@@ -3,8 +3,9 @@ import {
   CartesianGrid, ComposedChart, Line, Legend, ReferenceLine,
   PieChart, Pie, Cell,
 } from "recharts";
+import { useState } from "react";
 import {
-  DollarSign, TrendingUp, Target, BarChart3, Activity, Users, FileText, Zap, FileSpreadsheet,
+  DollarSign, TrendingUp, Target, BarChart3, Activity, Users, FileText, Zap, FileSpreadsheet, Search,
 } from "lucide-react";
 import { Sparkles } from "lucide-react";
 import { MESES, MESES_FULL, MEPCO_ADJUSTMENT_MONTH } from "../constants.js";
@@ -16,6 +17,8 @@ import ChartTooltip from "../components/ChartTooltip.jsx";
 import MepcoBanner from "../components/MepcoBanner.jsx";
 
 export default function VentasView({ C, T, projectionMode, setProjectionMode }) {
+  const [monthRange, setMonthRange] = useState(12);
+  const [searchCliente, setSearchCliente] = useState("");
   const mesLabel = MESES_FULL[C.curMonth];
   const varMes = C.totalMesAnterior>0 ? pctChange(C.totalMesActual,C.totalMesAnterior) : 0;
   const varAno = C.ventasAnoAnterior>0 ? pctChange(C.ventasAnoActual,C.ventasAnoAnterior) : 0;
@@ -35,7 +38,7 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
     {id:"lineal",label:"Lineal",desc:"Promedio simple × 12"},
   ];
 
-  const chartDataProj = (C.ventasPorMesConProyeccion||[]).map((m,i) => {
+  const chartDataAll = (C.ventasPorMesConProyeccion||[]).map((m,i) => {
     const proyV = (C.facturacionProyectadaPorViajes||[])[i] || 0;
     const showViajes = i >= C.curMonth && proyV > 0;
     const esMesActual = i === C.curMonth;
@@ -50,6 +53,14 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
       proyViajes: showViajes ? proyV/1e6 : null,
     };
   });
+
+  const chartDataProj = monthRange >= 12
+    ? chartDataAll
+    : chartDataAll.slice(Math.max(0, C.curMonth - monthRange + 1));
+
+  const clientesFiltrados = searchCliente.trim()
+    ? (C.topClientes||[]).filter(c => c.name.toLowerCase().includes(searchCliente.toLowerCase()))
+    : (C.topClientes||[]);
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
@@ -182,7 +193,19 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
         </details>
       )}
 
-      <SectionCard title={`Comparación mensual — ${C.curYear} vs ${C.prevYear} (con proyección)`} icon={BarChart3} T={T} color={T.accent}>
+      <SectionCard
+        title={`Comparación mensual — ${C.curYear} vs ${C.prevYear}`}
+        icon={BarChart3} T={T} color={T.accent}
+        action={
+          <div style={{display:"flex",gap:4}}>
+            {[3,6,12].map(n=>(
+              <button key={n} onClick={()=>setMonthRange(n)} style={{padding:"3px 9px",borderRadius:7,border:`1px solid ${monthRange===n?T.accent:T.border}`,background:monthRange===n?T.accentBg:"transparent",color:monthRange===n?T.accent:T.txM,cursor:"pointer",fontSize:11,fontWeight:700}}>
+                {n===12?"Año":`${n}m`}
+              </button>
+            ))}
+          </div>
+        }
+      >
         <ResponsiveContainer width="100%" height={320}>
           <ComposedChart data={chartDataProj}>
             <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
@@ -251,7 +274,15 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
           </div>
         </SectionCard>
         <SectionCard title="Top clientes del mes" icon={Users} T={T} color={T.accent}>
-          <MiniTable T={T} headers={["#","Cliente","Monto","% Part."]} rows={(C.topClientes||[]).map((c,i)=>[i+1,c.name.length>22?c.name.slice(0,20)+"...":c.name,fmtM(c.total),C.totalMesActual>0?((c.total/C.totalMesActual)*100).toFixed(1)+"%":"0%"])}/>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,background:T.bg3,borderRadius:8,padding:"6px 10px",border:`1px solid ${T.border}`}}>
+            <Search size={13} color={T.txD}/>
+            <input
+              value={searchCliente} onChange={e=>setSearchCliente(e.target.value)}
+              placeholder="Buscar cliente…" style={{background:"transparent",border:"none",outline:"none",color:T.tx,fontSize:12,flex:1,minWidth:0}}
+            />
+            {searchCliente&&<button onClick={()=>setSearchCliente("")} style={{background:"none",border:"none",color:T.txD,cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 2px"}}>×</button>}
+          </div>
+          <MiniTable T={T} headers={["#","Cliente","Monto","% Part."]} rows={clientesFiltrados.map((c,i)=>[i+1,c.name.length>22?c.name.slice(0,20)+"...":c.name,fmtM(c.total),C.totalMesActual>0?((c.total/C.totalMesActual)*100).toFixed(1)+"%":"0%"])}/>
         </SectionCard>
         <SectionCard title="Últimas facturas ingresadas" icon={FileText} T={T} color={T.green}>
           {(C.ultimasFacturas||[]).length>0?(

@@ -4,8 +4,13 @@ import { parseNum } from "../utils.js";
 import KpiCard from "../components/KpiCard.jsx";
 import MiniTable from "../components/MiniTable.jsx";
 import SectionCard from "../components/SectionCard.jsx";
+import Pagination from "../components/Pagination.jsx";
+import { usePagination } from "../hooks/usePagination.js";
 
 export default function LeasingView({ C, T }) {
+  const leasingDetRows = C.leasingDet || [];
+  const { page: detPage, setPage: setDetPage, totalPages: detTotalPages, pageItems: detPageItems } = usePagination(leasingDetRows, 10);
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
@@ -79,8 +84,32 @@ export default function LeasingView({ C, T }) {
         ):<p style={{fontSize:12,color:T.txM,padding:8}}>Sin proyección disponible</p>}
       </SectionCard>
 
-      <SectionCard title="Detalle de contratos activos" icon={Truck} T={T}>
-        <MiniTable T={T} maxRows={15} headers={["ID","Banco","Tractos","Cuota UF","Día","Inicio","Vence","Pagadas","Restantes"]} rows={(C.leasingDet||[]).map(r=>[r.ID||r.id,r["Banco / Emisor"]||r.Banco||r.banco,r["N Tractos"]||r.Tractos,r["Cuota UF\nTotal Grupo"]||r["Cuota UF Total Grupo"]||"",r["Dia Vcto"]||r.DiaVcto,r["Fecha Inicio"]||r.FechaInicio||"",r["Fecha Fin\n(Vencimiento)"]||r["Fecha Fin (Vencimiento)"]||r["Fecha Fin"]||"",r["Cuotas\nPagadas"]||r["Cuotas Pagadas"]||"",r["Cuotas Por\nPagar"]||r["Cuotas Por Pagar"]||""])}/>
+      <SectionCard title={`Detalle de contratos activos (${leasingDetRows.length})`} icon={Truck} T={T}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr>{["ID","Banco","Tractos","Cuota UF","Día Vcto","Inicio","Vence","Cuotas Pagadas","Por Pagar"].map((h,i)=>(
+                <th key={i} style={{padding:"7px 10px",textAlign:i<2?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap",fontSize:11,background:T.bg3}}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {detPageItems.map((r,i)=>(
+                <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                  <td style={{padding:"6px 10px",color:T.txM,fontSize:11}}>{r.ID||r.id}</td>
+                  <td style={{padding:"6px 10px",color:T.tx,fontWeight:500,whiteSpace:"nowrap"}}>{r["Banco / Emisor"]||r.Banco||r.banco}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",color:T.tx}}>{r["N Tractos"]||r.Tractos}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",color:T.tx,fontFamily:"monospace"}}>{r["Cuota UF\nTotal Grupo"]||r["Cuota UF Total Grupo"]||"—"}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",color:T.txM}}>{r["Dia Vcto"]||r.DiaVcto}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",color:T.txD,fontSize:11}}>{r["Fecha Inicio"]||r.FechaInicio||"—"}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",color:T.txD,fontSize:11}}>{r["Fecha Fin\n(Vencimiento)"]||r["Fecha Fin (Vencimiento)"]||r["Fecha Fin"]||"—"}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",color:T.green}}>{r["Cuotas\nPagadas"]||r["Cuotas Pagadas"]||"—"}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",color:T.amber}}>{r["Cuotas Por\nPagar"]||r["Cuotas Por Pagar"]||"—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={detPage} totalPages={detTotalPages} setPage={setDetPage} T={T}/>
       </SectionCard>
     </div>
   );

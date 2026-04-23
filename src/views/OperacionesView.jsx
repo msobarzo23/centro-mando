@@ -2,8 +2,9 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, PieChart, Pie, Cell,
 } from "recharts";
+import { useState } from "react";
 import {
-  Truck, Activity, BarChart3, MapPin, Target, Users, AlertTriangle, FileSpreadsheet,
+  Truck, Activity, BarChart3, MapPin, Target, Users, AlertTriangle, FileSpreadsheet, Search,
 } from "lucide-react";
 import { MESES, MESES_FULL } from "../constants.js";
 import { fmtM, fmtPct, pctChange } from "../utils.js";
@@ -13,14 +14,23 @@ import ChartTooltip from "../components/ChartTooltip.jsx";
 import OccupationBar from "../components/OccupationBar.jsx";
 
 export default function OperacionesView({ C, T }) {
+  const [monthRange, setMonthRange] = useState(12);
+  const [searchCliente, setSearchCliente] = useState("");
   const varViajes = C.viajesMesAnteriorCount>0 ? pctChange(C.viajesMesActual,C.viajesMesAnteriorCount) : 0;
   const varCorte = C.viajesCorteAnterior>0 ? pctChange(C.viajesCorteActual,C.viajesCorteAnterior) : 0;
 
-  const viajesChartData = (C.viajesPorMes||[]).map((m,i)=>({
+  const viajesChartAll = (C.viajesPorMes||[]).map((m,i)=>({
     mes: m.mes,
     real: m.total,
     proyectado: i===C.curMonth ? (C.viajesProyectadosFaltantes||0) : null,
   }));
+  const viajesChartData = monthRange >= 12
+    ? viajesChartAll
+    : viajesChartAll.slice(Math.max(0, C.curMonth - monthRange + 1));
+
+  const clientesFiltrados = searchCliente.trim()
+    ? (C.topClientesViajesProy||[]).filter(c => c.name.toLowerCase().includes(searchCliente.toLowerCase()))
+    : (C.topClientesViajesProy||[]);
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
@@ -73,7 +83,15 @@ export default function OperacionesView({ C, T }) {
       </SectionCard>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
-        <SectionCard title="Viajes por mes — con proyección de cierre" icon={BarChart3} T={T} color={T.green} action={<span style={{fontSize:10,color:T.txD,fontStyle:"italic"}}>Barra punteada: proyectado</span>}>
+        <SectionCard title="Viajes por mes — con proyección de cierre" icon={BarChart3} T={T} color={T.green} action={
+          <div style={{display:"flex",gap:4}}>
+            {[3,6,12].map(n=>(
+              <button key={n} onClick={()=>setMonthRange(n)} style={{padding:"3px 9px",borderRadius:7,border:`1px solid ${monthRange===n?T.green:T.border}`,background:monthRange===n?T.greenBg:"transparent",color:monthRange===n?T.green:T.txM,cursor:"pointer",fontSize:11,fontWeight:700}}>
+                {n===12?"Año":`${n}m`}
+              </button>
+            ))}
+          </div>
+        }>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={viajesChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
@@ -90,11 +108,19 @@ export default function OperacionesView({ C, T }) {
         </SectionCard>
 
         <SectionCard title="Top clientes por viajes" icon={Users} T={T} color={T.accent}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,background:T.bg3,borderRadius:8,padding:"6px 10px",border:`1px solid ${T.border}`}}>
+            <Search size={13} color={T.txD}/>
+            <input
+              value={searchCliente} onChange={e=>setSearchCliente(e.target.value)}
+              placeholder="Buscar cliente…" style={{background:"transparent",border:"none",outline:"none",color:T.tx,fontSize:12,flex:1,minWidth:0}}
+            />
+            {searchCliente&&<button onClick={()=>setSearchCliente("")} style={{background:"none",border:"none",color:T.txD,cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 2px"}}>×</button>}
+          </div>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead><tr>{["Cliente","Viajes","Mes ant.","Proy. cierre","Avance"].map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i===0?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
               <tbody>
-                {(C.topClientesViajesProy||[]).map((c,i)=>{
+                {clientesFiltrados.map((c,i)=>{
                   const deltaMes=c.mesAnt>0?pctChange(c.proyCierre,c.mesAnt):0;
                   const avanceColor=c.avancePct>=90?T.green:c.avancePct>=70?T.amber:T.red;
                   return(
