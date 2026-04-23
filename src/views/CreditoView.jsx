@@ -1,7 +1,7 @@
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
-import { Banknote, DollarSign, Calendar, Target, CreditCard, Clock, TrendingDown } from "lucide-react";
+import { Banknote, DollarSign, Calendar, Target, CreditCard, Clock, TrendingDown, FileSpreadsheet } from "lucide-react";
 import { fmtM, fmtFull, parseDate } from "../utils.js";
 import KpiCard from "../components/KpiCard.jsx";
 import MiniTable from "../components/MiniTable.jsx";
@@ -14,7 +14,12 @@ export default function CreditoView({ C, T }) {
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
-      <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Crédito comercial — Banco Itaú</h2>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Crédito comercial — Banco Itaú</h2>
+        <button onClick={async()=>{const{exportCreditoExcel}=await import("../services/exportExcel.js");exportCreditoExcel(C);}} style={{display:"flex",alignItems:"center",gap:6,background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:8,cursor:"pointer",color:T.green,padding:"7px 14px",fontSize:12,fontWeight:600,flexShrink:0}}>
+          <FileSpreadsheet size={15}/>Excel
+        </button>
+      </div>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={Banknote} label="Deuda total pendiente" value={fmtM(C.creditoDeudaTotal)} T={T} sub={`Capital ${fmtM(C.creditoSaldoActual)} + Intereses ${fmtM(C.creditoInteresesPendientes)}`} color={T.red} colorBg={T.redBg}/>

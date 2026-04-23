@@ -4,7 +4,7 @@ import {
   PieChart, Pie, Cell,
 } from "recharts";
 import {
-  DollarSign, TrendingUp, Target, BarChart3, Activity, Users, FileText, Zap,
+  DollarSign, TrendingUp, Target, BarChart3, Activity, Users, FileText, Zap, FileSpreadsheet,
 } from "lucide-react";
 import { Sparkles } from "lucide-react";
 import { MESES, MESES_FULL, MEPCO_ADJUSTMENT_MONTH } from "../constants.js";
@@ -53,9 +53,14 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
-      <div>
-        <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Ventas y facturación</h2>
-        <p style={{fontSize:12,color:T.txM,marginTop:3}}>Lectura ejecutiva de facturación con proyección del cierre anual</p>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <div>
+          <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Ventas y facturación</h2>
+          <p style={{fontSize:12,color:T.txM,marginTop:3}}>Lectura ejecutiva de facturación con proyección del cierre anual</p>
+        </div>
+        <button onClick={async()=>{const{exportVentasExcel}=await import("../services/exportExcel.js");exportVentasExcel(C);}} style={{display:"flex",alignItems:"center",gap:6,background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:8,cursor:"pointer",color:T.green,padding:"7px 14px",fontSize:12,fontWeight:600,flexShrink:0}}>
+          <FileSpreadsheet size={15}/>Excel
+        </button>
       </div>
 
       <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1}/>

@@ -1,5 +1,5 @@
 import {
-  Building2, PiggyBank, Gauge, Calendar, TrendingUp, Clock,
+  Building2, PiggyBank, Gauge, Calendar, TrendingUp, Clock, FileSpreadsheet,
 } from "lucide-react";
 import { MESES_FULL } from "../constants.js";
 import { fmtM, fmtFull, parseDate } from "../utils.js";
@@ -17,7 +17,12 @@ export default function FinanzasView({ C, T }) {
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
-      <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Finanzas</h2>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Finanzas</h2>
+        <button onClick={async()=>{const{exportFinanzasExcel}=await import("../services/exportExcel.js");exportFinanzasExcel(C);}} style={{display:"flex",alignItems:"center",gap:6,background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:8,cursor:"pointer",color:T.green,padding:"7px 14px",fontSize:12,fontWeight:600,flexShrink:0}}>
+          <FileSpreadsheet size={15}/>Excel
+        </button>
+      </div>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} color={T.teal} colorBg={T.tealBg}/>

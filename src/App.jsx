@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { RefreshCw, Sun, Moon, Menu, X, Calendar, PiggyBank, TrendingDown, Users, Truck, AlertTriangle, CreditCard } from "lucide-react";
+import { RefreshCw, Sun, Moon, Menu, X, Calendar, PiggyBank, TrendingDown, Users, Truck, AlertTriangle, CreditCard, FileDown } from "lucide-react";
 import { CSV, AUTO_REFRESH_MIN, MESES, TABS, themes, COMODIN_TRACTO, COMODIN_CONDUCTOR, UMBRAL_LIQUIDEZ_AMARILLA, UMBRAL_VIAJES_ALERTA, UMBRAL_OCUPACION_ALERTA } from "./constants.js";
 import { parseNum, parseDate, normName, fmtM, pctChange, businessDaysInMonth, businessDaysElapsed } from "./utils.js";
 import { fetchCSV, fetchFinCSV, fetchRawCSV, parseLeasingResumen } from "./services/fetchData.js";
@@ -434,6 +434,11 @@ export default function App() {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           {lastUpdate && <span style={{fontSize:10,color:T.txD}}>{lastUpdate.toLocaleTimeString("es-CL",{hour:"2-digit",minute:"2-digit"})}</span>}
+          {computed && (
+            <button onClick={async()=>{const{exportFullPDF}=await import("./services/exportPDF.js");exportFullPDF(computed);}} title="Exportar reporte ejecutivo PDF" style={{display:"flex",alignItems:"center",gap:5,background:T.accentBg,border:`1px solid ${T.accent}44`,borderRadius:7,cursor:"pointer",color:T.accent,padding:"4px 10px",fontSize:11,fontWeight:600}}>
+              <FileDown size={14}/><span className="pdf-btn-label">PDF</span>
+            </button>
+          )}
           <button onClick={loadData} style={{background:"none",border:"none",cursor:"pointer",color:T.txM,padding:4}} title="Actualizar"><RefreshCw size={16} className={loading?"spinning":""}/></button>
           <button onClick={toggleTheme} style={{background:"none",border:"none",cursor:"pointer",color:T.txM,padding:4}}>{dark?<Sun size={16}/>:<Moon size={16}/>}</button>
         </div>
@@ -477,7 +482,7 @@ export default function App() {
         </div>
       </nav>
 
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spinning{animation:spin 1s linear infinite}@keyframes progressBar{0%{transform:scaleX(0);opacity:1}70%{transform:scaleX(0.8);opacity:1}100%{transform:scaleX(1);opacity:0}}@media(max-width:768px){.sidebar{display:none!important}.bottom-nav{display:block!important}.mobile-menu-btn{display:block!important}main{padding:14px 12px 80px!important}}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spinning{animation:spin 1s linear infinite}@keyframes progressBar{0%{transform:scaleX(0);opacity:1}70%{transform:scaleX(0.8);opacity:1}100%{transform:scaleX(1);opacity:0}}@media(max-width:768px){.sidebar{display:none!important}.bottom-nav{display:block!important}.mobile-menu-btn{display:block!important}main{padding:14px 12px 80px!important}.pdf-btn-label{display:none}}`}</style>
     </div>
   );
 }

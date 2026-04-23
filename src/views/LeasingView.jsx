@@ -1,4 +1,4 @@
-import { Truck, DollarSign, Banknote, Calendar, Clock, Building2, TrendingDown } from "lucide-react";
+import { Truck, DollarSign, Banknote, Calendar, Clock, Building2, TrendingDown, FileSpreadsheet } from "lucide-react";
 import { fmtM } from "../utils.js";
 import { parseNum } from "../utils.js";
 import KpiCard from "../components/KpiCard.jsx";
@@ -8,7 +8,12 @@ import SectionCard from "../components/SectionCard.jsx";
 export default function LeasingView({ C, T }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
-      <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Leasing</h2>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Leasing</h2>
+        <button onClick={async()=>{const{exportLeasingExcel}=await import("../services/exportExcel.js");exportLeasingExcel(C);}} style={{display:"flex",alignItems:"center",gap:6,background:T.greenBg,border:`1px solid ${T.green}44`,borderRadius:8,cursor:"pointer",color:T.green,padding:"7px 14px",fontSize:12,fontWeight:600,flexShrink:0}}>
+          <FileSpreadsheet size={15}/>Excel
+        </button>
+      </div>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={Truck} label="Contratos activos" value={String(C.leasingContratosActivos)} T={T} sub={`${C.leasingTractosTotal} tractos en total`} color={T.accent} colorBg={T.accentBg}/>
