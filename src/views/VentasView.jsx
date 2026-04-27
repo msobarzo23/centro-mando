@@ -211,7 +211,7 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
             <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
             <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
             <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v.toFixed(0)}M`} width={55}/>
-            <Tooltip content={<ChartTooltip T={T}/>} formatter={(v)=>v!=null?`$${v.toFixed(1)}M`:"-"}/>
+            <Tooltip content={<ChartTooltip T={T} valuesInM/>}/>
             <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
             <Bar dataKey="anterior" fill={T.txD} opacity={0.45} radius={[3,3,0,0]} name={String(C.prevYear)}/>
             <Bar dataKey="real" stackId="curr" fill={T.accent} radius={[3,3,0,0]} name={`${C.curYear} Real`}/>
