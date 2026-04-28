@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { RefreshCw, Sun, Moon, Menu, X, Calendar, PiggyBank, TrendingDown, Users, Truck, AlertTriangle, CreditCard, FileDown } from "lucide-react";
+import { RefreshCw, Sun, Moon, Menu, X, Calendar, PiggyBank, TrendingDown, Users, Truck, AlertTriangle, CreditCard, FileDown, Maximize2, Minimize2 } from "lucide-react";
 import { CSV, AUTO_REFRESH_MIN, MESES, TABS, themes, COMODIN_TRACTO, COMODIN_CONDUCTOR, UMBRAL_LIQUIDEZ_AMARILLA, UMBRAL_VIAJES_ALERTA, UMBRAL_OCUPACION_ALERTA } from "./constants.js";
 import { parseNum, parseDate, normName, fmtM, pctChange, businessDaysInMonth, businessDaysElapsed } from "./utils.js";
 import { fetchCSV, fetchFinCSV, fetchRawCSV, parseLeasingResumen } from "./services/fetchData.js";
+import ResumenView from "./views/ResumenView.jsx";
 import HomeView from "./views/HomeView.jsx";
 import VentasView from "./views/VentasView.jsx";
 import OperacionesView from "./views/OperacionesView.jsx";
@@ -24,7 +25,15 @@ export default function App() {
   const [timeAgo, setTimeAgo] = useState("");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [projectionMode, setProjectionMode] = useState("seasonal");
+  const [presentation, setPresentation] = useState(false);
   const T = dark ? themes.dark : themes.light;
+
+  useEffect(() => {
+    if (!presentation) return;
+    const onKey = (e) => { if (e.key === "Escape") setPresentation(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [presentation]);
 
   const toggleTheme = () => {
     setDark(d => { const n = !d; try { localStorage.setItem("cm-theme", n ? "dark" : "light"); } catch {} return n; });
@@ -423,7 +432,7 @@ export default function App() {
   const activeAlerts = (C.alertas||[]).length;
 
   return (
-    <div style={{background:T.bg,minHeight:"100vh",fontFamily:"'Inter','SF Pro Display',system-ui,sans-serif",color:T.tx}}>
+    <div className={presentation?"cm-presentation":""} style={{background:T.bg,minHeight:"100vh",fontFamily:"'Inter','SF Pro Display',system-ui,sans-serif",color:T.tx}}>
       {loading && computed && (
         <div style={{position:"fixed",top:0,left:0,right:0,height:3,zIndex:200,background:T.accentBg,overflow:"hidden"}}>
           <div style={{height:"100%",background:T.accent,animation:"progressBar 1.5s ease-in-out infinite",transformOrigin:"left"}}/>
@@ -458,6 +467,9 @@ export default function App() {
             </button>
           )}
           <button onClick={loadData} style={{background:"none",border:"none",cursor:"pointer",color:T.txM,padding:4}} title="Actualizar"><RefreshCw size={16} className={loading?"spinning":""}/></button>
+          <button onClick={()=>setPresentation(p=>!p)} style={{background:"none",border:"none",cursor:"pointer",color:presentation?T.accent:T.txM,padding:4}} title={presentation?"Salir del modo presentación (Esc)":"Modo presentación / TV"}>
+            {presentation ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+          </button>
           <button onClick={toggleTheme} style={{background:"none",border:"none",cursor:"pointer",color:T.txM,padding:4}}>{dark?<Sun size={16}/>:<Moon size={16}/>}</button>
         </div>
       </header>
@@ -483,7 +495,8 @@ export default function App() {
           </div>
         )}
 
-        <main style={{flex:1,padding:"20px 24px",maxWidth:1200,overflowX:"hidden"}}>
+        <main style={{flex:1,padding:presentation?"32px 40px":"20px 24px",maxWidth:presentation?1600:1200,margin:presentation?"0 auto":undefined,overflowX:"hidden"}}>
+          {tab==="resumen"&&<ResumenView C={C} T={T} setTab={setTab}/>}
           {tab==="home"&&<HomeView C={C} T={T} setTab={setTab}/>}
           {tab==="ventas"&&<VentasView C={C} T={T} projectionMode={projectionMode} setProjectionMode={setProjectionMode}/>}
           {tab==="operaciones"&&<OperacionesView C={C} T={T}/>}
@@ -500,7 +513,7 @@ export default function App() {
         </div>
       </nav>
 
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spinning{animation:spin 1s linear infinite}@keyframes progressBar{0%{transform:scaleX(0);opacity:1}70%{transform:scaleX(0.8);opacity:1}100%{transform:scaleX(1);opacity:0}}@media(max-width:768px){.sidebar{display:none!important}.bottom-nav{display:block!important}.mobile-menu-btn{display:block!important}main{padding:14px 12px 80px!important}.pdf-btn-label{display:none}}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spinning{animation:spin 1s linear infinite}@keyframes progressBar{0%{transform:scaleX(0);opacity:1}70%{transform:scaleX(0.8);opacity:1}100%{transform:scaleX(1);opacity:0}}@media(max-width:768px){.sidebar{display:none!important}.bottom-nav{display:block!important}.mobile-menu-btn{display:block!important}main{padding:14px 12px 80px!important}.pdf-btn-label{display:none}}.cm-presentation .sidebar,.cm-presentation .bottom-nav,.cm-presentation .mobile-menu-btn,.cm-presentation .mobile-nav-overlay{display:none!important}.cm-presentation main{font-size:1.1rem}.cm-presentation h1{font-size:34px!important}.cm-presentation h2{font-size:20px!important}`}</style>
     </div>
   );
 }

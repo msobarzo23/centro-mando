@@ -1,6 +1,7 @@
 import { useState } from "react";
+import Sparkline from "./Sparkline.jsx";
 
-export default function KpiCard({ icon:Icon, label, value, sub, color, colorBg, T, badge, tooltip }) {
+export default function KpiCard({ icon:Icon, label, value, sub, color, colorBg, T, badge, tooltip, trend, trendLabel }) {
   const [hover, setHover] = useState(false);
   return (
     <div
@@ -20,6 +21,12 @@ export default function KpiCard({ icon:Icon, label, value, sub, color, colorBg, 
       </div>
       <div style={{fontSize:22,fontWeight:700,color:T.tx,letterSpacing:-0.5}}>{value}</div>
       {sub&&<div style={{fontSize:12,color:sub.startsWith("+")?T.green:sub.startsWith("-")?T.red:T.txM}}>{sub}</div>}
+      {trend&&trend.length>=2&&(
+        <div style={{marginTop:2}}>
+          <Sparkline data={trend} color={color} T={T}/>
+          {trendLabel&&<div style={{fontSize:9,color:T.txD,marginTop:2,letterSpacing:0.3,textTransform:"uppercase",fontWeight:600}}>{trendLabel}</div>}
+        </div>
+      )}
       {tooltip&&hover&&(
         <div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:6,background:T.tooltipBg,border:`1px solid ${color}55`,borderRadius:10,padding:"12px 14px",fontSize:11,color:T.tooltipTx,lineHeight:1.5,zIndex:50,boxShadow:"0 8px 24px rgba(0,0,0,0.25)",minWidth:260}}>
           {tooltip}

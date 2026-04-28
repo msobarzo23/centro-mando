@@ -21,6 +21,18 @@ export default function HomeView({ C, T, setTab }) {
   const saludo = getSaludo();
   const fecha = getFechaLarga();
 
+  const trendVentas12m = [];
+  if (C.ventasPorMesComparado && C.curMonth !== undefined) {
+    for (let i = C.curMonth + 1; i < 12; i++) trendVentas12m.push(C.ventasPorMesComparado[i]?.anterior || 0);
+    for (let i = 0; i <= C.curMonth; i++) {
+      const v = C.ventasPorMesComparado[i]?.actual || 0;
+      trendVentas12m.push(v > 0 ? v : null);
+    }
+  }
+  const trendViajes = (C.viajesPorMes || [])
+    .slice(0, (C.curMonth ?? -1) + 1)
+    .map(m => m.total > 0 ? m.total : null);
+
   const chartData = (C.ventasPorMesConProyeccion||[]).map((m, i) => {
     const proyV = (C.facturacionProyectadaPorViajes||[])[i] || 0;
     const showViajes = i >= C.curMonth && proyV > 0;
@@ -55,8 +67,8 @@ export default function HomeView({ C, T, setTab }) {
       <HighlightsBanner C={C} T={T}/>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-        <KpiCard icon={DollarSign} label="Facturación mes" value={fmtM(C.totalMesActual)} T={T} sub={C.totalMesAnterior>0?fmtPct(pctChange(C.totalMesActual,C.totalMesAnterior))+" vs mes ant.":undefined} color={T.accent} colorBg={T.accentBg}/>
-        <KpiCard icon={Truck} label="Viajes mes" value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={`Corte día ${C.dayOfMonth}: ${C.viajesCorteActual} vs ${C.viajesCorteAnterior}`} color={T.green} colorBg={T.greenBg}/>
+        <KpiCard icon={DollarSign} label="Facturación mes" value={fmtM(C.totalMesActual)} T={T} sub={C.totalMesAnterior>0?fmtPct(pctChange(C.totalMesActual,C.totalMesAnterior))+" vs mes ant.":undefined} color={T.accent} colorBg={T.accentBg} trend={trendVentas12m} trendLabel="Últimos 12 meses"/>
+        <KpiCard icon={Truck} label="Viajes mes" value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={`Corte día ${C.dayOfMonth}: ${C.viajesCorteActual} vs ${C.viajesCorteAnterior}`} color={T.green} colorBg={T.greenBg} trend={trendViajes} trendLabel={`${trendViajes.filter(Boolean).length} meses ${C.curYear}`}/>
         <KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} sub={Object.keys(C.saldosBancos||{}).length+" bancos"} color={T.teal} colorBg={T.tealBg}/>
         <KpiCard
           icon={Gauge} label="Liquidez 30d"

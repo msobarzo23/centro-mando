@@ -1,5 +1,5 @@
 import {
-  Activity, DollarSign, Truck, Banknote, CreditCard, AlertTriangle,
+  Activity, DollarSign, Truck, Banknote, CreditCard, AlertTriangle, Eye,
 } from "lucide-react";
 
 export const CSV = {
@@ -58,6 +58,7 @@ export const themes = {
 };
 
 export const TABS = [
+  {id:"resumen",label:"Resumen",icon:Eye},
   {id:"home",label:"Inicio",icon:Activity},
   {id:"ventas",label:"Ventas",icon:DollarSign},
   {id:"operaciones",label:"Operaciones",icon:Truck},
