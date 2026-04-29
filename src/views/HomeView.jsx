@@ -4,7 +4,7 @@ import {
 } from "recharts";
 import {
   DollarSign, Truck, Building2, PiggyBank, TrendingUp, BarChart3,
-  Calendar, Users, AlertTriangle, Zap, Gauge, CreditCard,
+  Calendar, Users, AlertTriangle, Zap, Gauge, CreditCard, History,
 } from "lucide-react";
 import { Sparkles } from "lucide-react";
 import { MESES, MESES_FULL, MEPCO_ADJUSTMENT_MONTH } from "../constants.js";
@@ -17,9 +17,60 @@ import MepcoBanner from "../components/MepcoBanner.jsx";
 import HighlightsBanner from "../components/HighlightsBanner.jsx";
 import SemaforoEjecutivo from "../components/SemaforoEjecutivo.jsx";
 
-export default function HomeView({ C, T, setTab }) {
+const COMPARE_LABELS = {
+  day:   { selector: "Hoy",     vsCorto: "vs ayer",        valor: "Hoy" },
+  week:  { selector: "Semana",  vsCorto: "vs sem. ant.",   valor: "Semana actual" },
+  month: { selector: "Mes",     vsCorto: "vs mes ant.",    valor: "Mes actual" },
+};
+
+function buildSub(metric, mode, esMonto) {
+  if (!metric) return { sub: "Histórico aún no inicializado", subColor: null };
+  const lbl = COMPARE_LABELS[mode].vsCorto;
+  if (metric.delta === null || metric.previo === null) {
+    return { sub: `Esperando datos comparables (${lbl})`, subColor: null };
+  }
+  const signoNum = metric.delta > 0 ? "+" : (metric.delta < 0 ? "-" : "");
+  const absDelta = Math.abs(metric.delta);
+  const valDelta = esMonto
+    ? (absDelta >= 1e6 ? `${(absDelta/1e6).toFixed(1)}M` : `${Math.round(absDelta).toLocaleString("es-CL")}`)
+    : absDelta.toLocaleString("es-CL");
+  const pctTxt = metric.pct === null ? "" : ` (${metric.pct >= 0 ? "+" : ""}${metric.pct.toFixed(1)}%)`;
+  return { sub: `${signoNum}${valDelta}${pctTxt} ${lbl}`, subColor: null };
+}
+
+function valorActual(metric, esMonto) {
+  if (!metric || metric.actual === null || metric.actual === undefined) return "—";
+  if (esMonto) {
+    const v = metric.actual;
+    if (Math.abs(v) >= 1e6) return `$${(v/1e6).toFixed(1)}M`;
+    if (Math.abs(v) >= 1e3) return `$${Math.round(v).toLocaleString("es-CL")}`;
+    return `$${v.toFixed(0)}`;
+  }
+  return metric.actual.toLocaleString("es-CL");
+}
+
+function SelectorPeriodo({ mode, setMode, T }) {
+  const opts = ["day", "week", "month"];
+  return (
+    <div style={{display:"inline-flex",background:T.bg3,borderRadius:8,padding:2,gap:2}}>
+      {opts.map(o => {
+        const active = mode === o;
+        return (
+          <button key={o} onClick={()=>setMode(o)}
+            style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,cursor:"pointer",background:active?T.accentBg:"transparent",color:active?T.accent:T.txM,transition:"all 0.15s"}}>
+            {COMPARE_LABELS[o].selector}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) {
   const saludo = getSaludo();
   const fecha = getFechaLarga();
+  const comp = C.comparativas?.[compareMode];
+  const histListo = C.comparativas && C.comparativas.snapshotsTotales > 0;
 
   const chartData = (C.ventasPorMesConProyeccion||[]).map((m, i) => {
     const proyV = (C.facturacionProyectadaPorViajes||[])[i] || 0;
@@ -87,6 +138,43 @@ export default function HomeView({ C, T, setTab }) {
         <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA)+" c/IVA"} T={T} sub={`${C.leasingContratosActivos} contratos · ${C.leasingTractosTotal} tractos`} color={T.violet} colorBg={T.violetBg}/>
         <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoDeudaTotal)} T={T} sub={C.creditoProxima?`Próxima: ${fmtM(C.creditoProxima.valorCuota)} · cuota #${C.creditoProxima.cuota}`:"En gracia"} color={T.red} colorBg={T.redBg}/>
       </div>
+
+      <SectionCard
+        title="Comparativa de períodos"
+        icon={History} T={T} color={T.violet}
+        action={<SelectorPeriodo mode={compareMode} setMode={setCompareMode} T={T}/>}
+      >
+        {!histListo ? (
+          <div style={{padding:"14px 4px",fontSize:12,color:T.txM,lineHeight:1.5}}>
+            La historización aún no comenzó a capturar datos. Una vez que la planilla
+            <code style={{background:T.bg3,padding:"1px 6px",borderRadius:4,margin:"0 4px",fontSize:11}}>Centro_mando_historico</code>
+            esté publicada y conectada, las comparativas Hoy / Semana / Mes aparecerán aquí.
+          </div>
+        ) : (
+          <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+            {(() => {
+              const m = comp?.ventas;
+              const { sub } = buildSub(m, compareMode, true);
+              return <KpiCard icon={DollarSign} label={`Ventas ${COMPARE_LABELS[compareMode].valor.toLowerCase()}`} value={valorActual(m, true)} sub={sub} T={T} color={T.accent} colorBg={T.accentBg}/>;
+            })()}
+            {(() => {
+              const m = comp?.viajes;
+              const { sub } = buildSub(m, compareMode, false);
+              return <KpiCard icon={Truck} label={`Viajes ${COMPARE_LABELS[compareMode].valor.toLowerCase()}`} value={valorActual(m, false)} sub={sub} T={T} color={T.green} colorBg={T.greenBg}/>;
+            })()}
+            {(() => {
+              const m = comp?.tractos;
+              const { sub } = buildSub(m, compareMode, false);
+              return <KpiCard icon={Truck} label="Tractos en operación" value={valorActual(m, false)} sub={sub} T={T} color={T.teal} colorBg={T.tealBg}/>;
+            })()}
+            {(() => {
+              const m = comp?.conductores;
+              const { sub } = buildSub(m, compareMode, false);
+              return <KpiCard icon={Users} label="Conductores ocupados" value={valorActual(m, false)} sub={sub} T={T} color={T.purple} colorBg={T.purpleBg}/>;
+            })()}
+          </div>
+        )}
+      </SectionCard>
 
       <SectionCard title={`Facturación mensual ${C.curYear} — con proyección estacional`} icon={BarChart3} T={T} color={T.accent} action={<span style={{fontSize:10,color:T.txD,fontStyle:"italic"}}>Proyección anual: <strong style={{color:T.amber}}>{fmtM(C.projections?.seasonal||0)}</strong></span>}>
         <ResponsiveContainer width="100%" height={260}>
