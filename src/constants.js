@@ -17,6 +17,7 @@ export const CSV = {
   credito: "https://docs.google.com/spreadsheets/d/e/2PACX-1vQGj2ZfrfOA8xOPRV4_Z1H2wnCpBfEav9PgbD67iKw4b-R0Inuk_LgiPQ6wJk66N1M3AXIy0ZXhLLcJ/pub?gid=1158539978&single=true&output=csv",
   expediciones: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTigiXG1q1lPK37HpOZ1j5WyvbKcLx1JDeNhFTFK_7wBczMG1KIfUFi3Nyiu3SWLsPR_dzYSS8Ji2wG/pub?gid=0&single=true&output=csv",
   conductoresActivos: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTigiXG1q1lPK37HpOZ1j5WyvbKcLx1JDeNhFTFK_7wBczMG1KIfUFi3Nyiu3SWLsPR_dzYSS8Ji2wG/pub?gid=780336350&single=true&output=csv",
+  historico: "https://docs.google.com/spreadsheets/d/e/2PACX-1vREKe17-b_uW_0WHsmAyfuHXnN--S8rzdWGgY9M4rhM6cZ0iSjFOJMNazSjtHLvLk7j15IHFtlB_DU_/pub?gid=2078102522&single=true&output=csv",
 };
 
 export const AUTO_REFRESH_MIN = 15;

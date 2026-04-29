@@ -3,6 +3,7 @@ import { RefreshCw, Sun, Moon, Menu, X, Calendar, PiggyBank, TrendingDown, Users
 import { CSV, AUTO_REFRESH_MIN, MESES, TABS, themes, COMODIN_TRACTO, COMODIN_CONDUCTOR, UMBRAL_LIQUIDEZ_AMARILLA, UMBRAL_VIAJES_ALERTA, UMBRAL_OCUPACION_ALERTA } from "./constants.js";
 import { parseNum, parseDate, normName, fmtM, pctChange, businessDaysInMonth, businessDaysElapsed } from "./utils.js";
 import { fetchCSV, fetchFinCSV, fetchRawCSV, parseLeasingResumen } from "./services/fetchData.js";
+import { parseHistorico, computeComparativas } from "./services/historico.js";
 import ResumenView from "./views/ResumenView.jsx";
 import HomeView from "./views/HomeView.jsx";
 import VentasView from "./views/VentasView.jsx";
@@ -26,6 +27,8 @@ export default function App() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [projectionMode, setProjectionMode] = useState("seasonal");
   const [presentation, setPresentation] = useState(false);
+  const [compareMode, setCompareModeRaw] = useState(() => { try { return localStorage.getItem("cm-compare") || "day"; } catch { return "day"; } });
+  const setCompareMode = useCallback((m) => { setCompareModeRaw(m); try { localStorage.setItem("cm-compare", m); } catch {} }, []);
   const T = dark ? themes.dark : themes.light;
 
   useEffect(() => {
@@ -43,9 +46,10 @@ export default function App() {
     setLoading(true);
     setFetchError(null);
     try {
-      const [ventas,viajes,flotaViajes,flotaEquipos,expediciones,conductoresActivos] = await Promise.all([
+      const [ventas,viajes,flotaViajes,flotaEquipos,expediciones,conductoresActivos,historico] = await Promise.all([
         fetchCSV(CSV.ventas), fetchCSV(CSV.viajes), fetchCSV(CSV.flotaViajes),
         fetchCSV(CSV.flotaEquipos), fetchCSV(CSV.expediciones), fetchCSV(CSV.conductoresActivos),
+        CSV.historico ? fetchCSV(CSV.historico) : Promise.resolve([]),
       ]);
       const [finResumen,finBancos,finDAP,finCalendario,finFondos,leasingDetalle,leasingResumenRaw,credito] = await Promise.all([
         fetchFinCSV(CSV.finResumen, ["Concepto","Monto","Ganancia","Mes","Comprometido","Guardado"]),
@@ -60,7 +64,7 @@ export default function App() {
       const leasingResumen = parseLeasingResumen(leasingResumenRaw);
       const allEmpty = [ventas,viajes,flotaViajes,flotaEquipos,finBancos].every(d => d.length === 0);
       if (allEmpty) setFetchError("No se pudieron cargar los datos. Verifica tu conexión o los permisos de las hojas.");
-      setData({ ventas, viajes, finResumen, finBancos, finDAP, finCalendario, finFondos, flotaViajes, flotaEquipos, leasingDetalle, leasingResumen, credito, expediciones, conductoresActivos });
+      setData({ ventas, viajes, finResumen, finBancos, finDAP, finCalendario, finFondos, flotaViajes, flotaEquipos, leasingDetalle, leasingResumen, credito, expediciones, conductoresActivos, historico });
       setLastUpdate(new Date());
     } catch (e) {
       console.error(e);
@@ -413,7 +417,11 @@ export default function App() {
     const creditoMesEstimado=creditoValorCuota;
     const margenMesEstimado=totalMesActual-(totalCompromisosMes+leasingMesEstimado+creditoMesEstimado);
 
-    return {totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,margenMesEstimado,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
+    // ══════════ HISTORIZACIÓN ══════════
+    const histRows=parseHistorico(data.historico);
+    const comparativas=computeComparativas(histRows,now);
+
+    return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,margenMesEstimado,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
   }, [data]);
 
   if (loading && !computed) {
@@ -497,7 +505,7 @@ export default function App() {
 
         <main style={{flex:1,padding:presentation?"32px 40px":"20px 24px",maxWidth:presentation?1600:1200,margin:presentation?"0 auto":undefined,overflowX:"hidden"}}>
           {tab==="resumen"&&<ResumenView C={C} T={T} setTab={setTab}/>}
-          {tab==="home"&&<HomeView C={C} T={T} setTab={setTab}/>}
+          {tab==="home"&&<HomeView C={C} T={T} setTab={setTab} compareMode={compareMode} setCompareMode={setCompareMode}/>}
           {tab==="ventas"&&<VentasView C={C} T={T} projectionMode={projectionMode} setProjectionMode={setProjectionMode}/>}
           {tab==="operaciones"&&<OperacionesView C={C} T={T}/>}
           {tab==="finanzas"&&<FinanzasView C={C} T={T}/>}
