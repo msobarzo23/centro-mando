@@ -51,8 +51,8 @@ function computeHighlights(C) {
     }
   }
 
-  if (C.mepcoActivo && C.impactoMepcoMes !== 0) {
-    items.push({ score:70, type:C.impactoMepcoMes>0?"success":"info", icon:Zap, title:"Impacto MEPCO en facturación del mes", text:`${C.impactoMepcoMes>0?"+":""}${fmtM(C.impactoMepcoMes)} vs proyección estacional base (sin ajuste)` });
+  if (C.mepcoActivo && C.impactoMepcoMes > 0) {
+    items.push({ score:70, type:"success", icon:Zap, title:"Impacto MEPCO en facturación del mes", text:`+${fmtM(C.impactoMepcoMes)} atribuible al reajuste tarifario (calculado por factura)` });
   }
 
   if (C.primeraSemanaCritica) {

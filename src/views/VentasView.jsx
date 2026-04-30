@@ -74,13 +74,13 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
         </button>
       </div>
 
-      <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1}/>
+      <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1} projections={C.projections}/>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={DollarSign} label={`Facturación ${mesLabel}`} value={fmtM(C.totalMesActual)} T={T} sub={varMes!==0?fmtPct(varMes)+" vs mes anterior":undefined} color={T.accent} colorBg={T.accentBg}/>
         <KpiCard icon={TrendingUp} label="Acumulado año" value={fmtM(C.ventasAnoActual)} T={T} sub={varAno!==0?fmtPct(varAno)+` vs ${C.prevYear}`:undefined} color={T.green} colorBg={T.greenBg}/>
         <KpiCard icon={Target} label="Proyección anual" value={fmtM(projection)} T={T} sub={`${fmtPct(projPct)} vs ${C.prevYear}`} color={T.amber} colorBg={T.amberBg} badge={projectionMode.toUpperCase()}/>
-        <KpiCard icon={Zap} label="Impacto MEPCO acum." value={C.impactoMepcoAcum===0?"—":(C.impactoMepcoAcum>0?"+":"")+fmtM(C.impactoMepcoAcum)} T={T} sub={C.mepcoActivo?"Desde mayo 2026":"Inicia mayo 2026"} color={T.violet} colorBg={T.violetBg} badge={C.mepcoActivo?"VIGENTE":"PREVIO"}/>
+        <KpiCard icon={Zap} label="Impacto MEPCO acum." value={C.impactoMepcoAcum>0?"+"+fmtM(C.impactoMepcoAcum):"—"} T={T} sub={C.mepcoActivo?"Atribuible al reajuste · desde mayo 2026":"Inicia mayo 2026"} color={T.violet} colorBg={T.violetBg} badge={C.mepcoActivo?"VIGENTE":"PREVIO"}/>
       </div>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>

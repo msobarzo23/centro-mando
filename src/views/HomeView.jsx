@@ -114,7 +114,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
         <SemaforoEjecutivo C={C} T={T}/>
       </div>
 
-      <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1} compact={true}/>
+      <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1} compact={true} projections={C.projections}/>
       <HighlightsBanner C={C} T={T}/>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
@@ -145,7 +145,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={TrendingUp} label={`Fact. proyectada ${C.curMonth<11?MESES[C.curMonth+1]:"Ene"}`} value={C.proyMesSiguientePorViajes>0?fmtM(C.proyMesSiguientePorViajes):"—"} T={T} sub={C.proyMesSiguientePorViajes>0?`Basada en viajes ${MESES[C.curMonth]} × tarifa hist.`:"Sin viajes mes actual"} color={T.teal} colorBg={T.tealBg} badge="PRÓX. MES"/>
-        <KpiCard icon={Zap} label="Impacto MEPCO mes" value={C.impactoMepcoMes===0?"—":(C.impactoMepcoMes>0?"+":"")+fmtM(C.impactoMepcoMes)} T={T} sub={C.mepcoActivo?(C.impactoMepcoAcum!==0?`Acum. desde mayo: ${C.impactoMepcoAcum>0?"+":""}${fmtM(C.impactoMepcoAcum)}`:"Sin efecto medible aún"):"Pendiente (desde mayo 2026)"} color={T.amber} colorBg={T.amberBg} badge={C.mepcoActivo?"VIGENTE":"PREVIO"}/>
+        <KpiCard icon={Zap} label="Impacto MEPCO mes" value={C.impactoMepcoMes>0?"+"+fmtM(C.impactoMepcoMes):"—"} T={T} sub={C.mepcoActivo?(C.impactoMepcoAcum>0?`Atribuible al reajuste · Acum. desde mayo: +${fmtM(C.impactoMepcoAcum)}`:"Sin facturación con reajuste aún"):"Pendiente (desde mayo 2026)"} color={T.amber} colorBg={T.amberBg} badge={C.mepcoActivo?"VIGENTE":"PREVIO"}/>
         <KpiCard icon={BarChart3} label="Margen estimado mes" value={fmtM(C.margenMesEstimado)} T={T} sub={`Fact. ${fmtM(C.totalMesActual)} − costos fijos`} color={C.margenMesEstimado>=0?T.green:T.red} colorBg={C.margenMesEstimado>=0?T.greenBg:T.redBg}/>
         <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA)+" c/IVA"} T={T} sub={`${C.leasingContratosActivos} contratos · ${C.leasingTractosTotal} tractos`} color={T.violet} colorBg={T.violetBg}/>
         <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoDeudaTotal)} T={T} sub={C.creditoProxima?`Próxima: ${fmtM(C.creditoProxima.valorCuota)} · cuota #${C.creditoProxima.cuota}`:"En gracia"} color={T.red} colorBg={T.redBg}/>

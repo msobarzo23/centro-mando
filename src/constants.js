@@ -26,7 +26,6 @@ export const MESES_FULL = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Jul
 export const COMODIN_TRACTO = "AA1111";
 export const COMODIN_CONDUCTOR = "CONDUCTOR, TRANSPORTES BELLO";
 export const MEPCO_ADJUSTMENT_MONTH = 5;
-export const MEPCO_CLIENTS_VISIBLE = ["Calidra", "CBB", "Novandino Litio", "Enaex", "Maxam", "Orica"];
 
 // Umbrales del semáforo ejecutivo
 export const UMBRAL_LIQUIDEZ_VERDE = 1.2;

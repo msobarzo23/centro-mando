@@ -4,6 +4,7 @@ import { CSV, AUTO_REFRESH_MIN, MESES, TABS, themes, COMODIN_TRACTO, COMODIN_CON
 import { parseNum, parseDate, normName, fmtM, pctChange, businessDaysInMonth, businessDaysElapsed } from "./utils.js";
 import { fetchCSV, fetchFinCSV, fetchRawCSV, parseLeasingResumen } from "./services/fetchData.js";
 import { parseHistorico, computeComparativas } from "./services/historico.js";
+import { getReajuste, getUpliftPonderado, MEPCO_ADJUSTMENT_MONTH, MEPCO_ADJUSTMENT_YEAR, MEPCO_TRIP_START_MONTH } from "./data/mepcoReajustes.js";
 import ResumenView from "./views/ResumenView.jsx";
 import HomeView from "./views/HomeView.jsx";
 import VentasView from "./views/VentasView.jsx";
@@ -12,8 +13,6 @@ import FinanzasView from "./views/FinanzasView.jsx";
 import LeasingView from "./views/LeasingView.jsx";
 import CreditoView from "./views/CreditoView.jsx";
 import AlertasView from "./views/AlertasView.jsx";
-
-const MEPCO_ADJUSTMENT_MONTH = 5;
 
 export default function App() {
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("cm-theme") !== "light"; } catch { return true; } });
@@ -98,7 +97,7 @@ export default function App() {
     const now = new Date(), curMonth = now.getMonth(), curYear = now.getFullYear();
 
     // ══════════ VENTAS ══════════
-    const ventasRows = (data.ventas||[]).map(r => { const d = parseDate(r.FECHA||r.Fecha||r.fecha); return {...r, _date:d, _neto:parseNum(r.NETO||r.Neto||r.neto)}; }).filter(r => r._date);
+    const ventasRows = (data.ventas||[]).map(r => { const d = parseDate(r.FECHA||r.Fecha||r.fecha); return {...r, _date:d, _neto:parseNum(r.NETO||r.Neto||r.neto), _rut:(r.RUT||r.Rut||r.rut||"").toString().trim()}; }).filter(r => r._date);
     const ventasMesActual = ventasRows.filter(r => r._date.getMonth()===curMonth && r._date.getFullYear()===curYear);
     const ventasMesAnterior = ventasRows.filter(r => { const pm=curMonth===0?11:curMonth-1; const py=curMonth===0?curYear-1:curYear; return r._date.getMonth()===pm && r._date.getFullYear()===py; });
     const totalMesActual = ventasMesActual.reduce((s,r) => s+r._neto, 0);
@@ -158,6 +157,26 @@ export default function App() {
       projProrata = openProjected*12;
     }
 
+    // ══════════ UPLIFT MEPCO PARA PROYECCIONES ══════════
+    // Construir lista {rut, prev} del año previo, ponderada por mix de clientes.
+    const clientPrevByRut = {};
+    ventasRows.forEach(r => {
+      if (r._date.getFullYear() !== prevYear || !r._rut) return;
+      clientPrevByRut[r._rut] = (clientPrevByRut[r._rut] || 0) + r._neto;
+    });
+    const clientPrevList = Object.entries(clientPrevByRut).map(([rut, prev]) => ({ rut, prev }));
+
+    const upliftPorMes = {};
+    for (let m = 1; m <= 12; m++) {
+      if (curYear === MEPCO_ADJUSTMENT_YEAR && m >= MEPCO_TRIP_START_MONTH) {
+        upliftPorMes[m] = getUpliftPonderado(clientPrevList, m);
+      } else if (curYear > MEPCO_ADJUSTMENT_YEAR) {
+        upliftPorMes[m] = getUpliftPonderado(clientPrevList, MEPCO_ADJUSTMENT_MONTH);
+      } else {
+        upliftPorMes[m] = 0;
+      }
+    }
+
     let projSeasonal = 0;
     const totalPrev = ventasAnoAnterior;
     if (totalPrev>0) {
@@ -167,17 +186,23 @@ export default function App() {
         const annualFromClosed = ytdClosed/weightsClosed;
         let openContribution = ytdOpen;
         if (openMonth) {
-          const weightOpen=weights[openMonth-1]; const expectedOpen=annualFromClosed*weightOpen;
+          const weightOpen=weights[openMonth-1];
+          const upliftOpen=upliftPorMes[openMonth]||0;
+          const expectedOpen=annualFromClosed*weightOpen*(1+upliftOpen);
           const elapsed=businessDaysElapsed(curYear,openMonth,now); const total=businessDaysInMonth(curYear,openMonth);
           const openProrata=elapsed>0?ytdOpen*(total/elapsed):ytdOpen;
           openContribution=Math.max(openProrata,expectedOpen);
         }
         const futureMonths = []; for(let m=1;m<=12;m++){if(!closedMonths.includes(m)&&m!==openMonth)futureMonths.push(m);}
-        const futureContribution = futureMonths.reduce((s,m)=>s+(annualFromClosed*weights[m-1]),0);
+        const futureContribution = futureMonths.reduce((s,m)=>s+(annualFromClosed*weights[m-1]*(1+(upliftPorMes[m]||0))),0);
         projSeasonal = ytdClosed+openContribution+futureContribution;
       }
     }
     if (projSeasonal===0 && projProrata>0) projSeasonal=projProrata;
+
+    const futureMonthsList = []; for(let m=1;m<=12;m++){if(!monthsWithData.includes(m))futureMonthsList.push(m);}
+    const upliftFuturos = futureMonthsList.map(m => upliftPorMes[m]||0).filter(v=>v>0);
+    const upliftAplicadoPromedio = upliftFuturos.length>0 ? upliftFuturos.reduce((s,v)=>s+v,0)/upliftFuturos.length : 0;
 
     const projections = {
       monthInProgress, openMonth, closedMonthsCount:closedMonths.length,
@@ -185,6 +210,7 @@ export default function App() {
       linear:Math.round(projLinear), prorata:Math.round(projProrata), seasonal:Math.round(projSeasonal),
       businessDaysElapsed:openMonth?businessDaysElapsed(curYear,openMonth,now):0,
       businessDaysTotal:openMonth?businessDaysInMonth(curYear,openMonth):0,
+      upliftPorMes, upliftAplicadoPromedio, upliftAplicado: upliftAplicadoPromedio>0,
     };
 
     const ventasPorMesConProyeccion = ventasPorMesComparado.map((m,i) => {
@@ -201,26 +227,23 @@ export default function App() {
       }
     });
 
-    // ══════════ IMPACTO MEPCO ══════════
-    const mepcoActivo = curYear>2026 || (curYear===2026 && curMonth+1>=MEPCO_ADJUSTMENT_MONTH);
-    let impactoMepcoAcum=0, impactoMepcoMes=0;
-    const mesesPreMepco = [1,2,3,4].filter(m=>monthsWithData.includes(m));
-    const ventasPreMepco = mesesPreMepco.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.actual||0),0);
-    if (totalPrev>0 && mesesPreMepco.length>0 && mepcoActivo) {
-      const weightsPreMepco = mesesPreMepco.reduce((s,m)=>s+((ventasPorMesComparado[m-1]?.anterior||0)/totalPrev),0);
-      if (weightsPreMepco>0) {
-        const baseAnualSinMepco = ventasPreMepco/weightsPreMepco;
-        for (let m=MEPCO_ADJUSTMENT_MONTH; m<=12; m++) {
-          if (monthsWithData.includes(m)) {
-            const weight=(ventasPorMesComparado[m-1]?.anterior||0)/totalPrev;
-            const esperado=baseAnualSinMepco*weight;
-            const real=ventasPorMesComparado[m-1]?.actual||0;
-            const diff=real-esperado;
-            impactoMepcoAcum+=diff;
-            if(m===curMonth+1)impactoMepcoMes=diff;
-          }
-        }
-      }
+    // ══════════ IMPACTO MEPCO (real, basado en mapa de reajustes) ══════════
+    // Para cada factura del año en curso desde mayo, calcular el aporte
+    // atribuible al reajuste: neto × pct/(1+pct). El neto facturado ya viene
+    // con tarifa nueva, así que la "contribución MEPCO" se obtiene despejando.
+    const mepcoActivo = curYear>=MEPCO_ADJUSTMENT_YEAR && (curYear>MEPCO_ADJUSTMENT_YEAR || curMonth+1>=MEPCO_ADJUSTMENT_MONTH);
+    let impactoMepcoMes=0, impactoMepcoAcum=0;
+    if (mepcoActivo) {
+      ventasRows.forEach(r => {
+        if (r._date.getFullYear() !== curYear) return;
+        const mes = r._date.getMonth() + 1;
+        if (mes < MEPCO_ADJUSTMENT_MONTH) return;
+        const { pct } = getReajuste(r._rut, mes, curYear);
+        if (pct <= 0) return;
+        const impacto = r._neto * pct / (1 + pct);
+        impactoMepcoAcum += impacto;
+        if (mes === curMonth + 1) impactoMepcoMes += impacto;
+      });
     }
 
     // ══════════ VIAJES ══════════
