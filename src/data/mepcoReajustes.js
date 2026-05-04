@@ -92,10 +92,21 @@ export const MEPCO_REEMBOLSO_DIESEL = new Set([
 // API pública
 // ═══════════════════════════════════════════════════════════════════════════
 
+// El CSV mezcla RUTs con y sin puntos según la fila ("76.041.871-4" vs
+// "76041871-4"); normalizamos quitando puntos para que el lookup matchee
+// independiente del formato de origen.
 function normalizaRut(rut) {
   if (!rut) return "";
-  return String(rut).trim().toUpperCase();
+  return String(rut).trim().toUpperCase().replace(/\./g, "");
 }
+
+const _SIMPLE_BY_NORM = Object.fromEntries(
+  Object.entries(MEPCO_REAJUSTES_SIMPLE).map(([k, v]) => [normalizaRut(k), v])
+);
+const _ESPECIALES_BY_NORM = Object.fromEntries(
+  Object.entries(MEPCO_REAJUSTES_ESPECIALES).map(([k, v]) => [normalizaRut(k), v])
+);
+const _REEMBOLSO_NORM = new Set([...MEPCO_REEMBOLSO_DIESEL].map(normalizaRut));
 
 export function getReajuste(rut, mes, year) {
   const r = normalizaRut(rut);
@@ -106,11 +117,11 @@ export function getReajuste(rut, mes, year) {
     (year === MEPCO_ADJUSTMENT_YEAR && mes >= MEPCO_TRIP_START_MONTH);
   if (!vigente) return { pct: 0, tipo: "ninguno" };
 
-  if (MEPCO_REEMBOLSO_DIESEL.has(r)) {
+  if (_REEMBOLSO_NORM.has(r)) {
     return { pct: 0, tipo: "reembolso", observacion: "Reembolso de diferencia diésel (línea aparte)" };
   }
 
-  const especial = MEPCO_REAJUSTES_ESPECIALES[r];
+  const especial = _ESPECIALES_BY_NORM[r];
   if (especial) {
     const v = especial.porMes[mes];
     if (v == null) {
@@ -130,7 +141,7 @@ export function getReajuste(rut, mes, year) {
     return { pct: v, tipo: "especial", observacion: especial.observacion };
   }
 
-  const simple = MEPCO_REAJUSTES_SIMPLE[r];
+  const simple = _SIMPLE_BY_NORM[r];
   if (simple) {
     return { pct: simple.pct, tipo: "simple", observacion: simple.observacion };
   }
