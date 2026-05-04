@@ -282,7 +282,14 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
             />
             {searchCliente&&<button onClick={()=>setSearchCliente("")} style={{background:"none",border:"none",color:T.txD,cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 2px"}}>×</button>}
           </div>
-          <MiniTable T={T} headers={["#","Cliente","Monto","% Part."]} rows={clientesFiltrados.map((c,i)=>[i+1,c.name.length>22?c.name.slice(0,20)+"...":c.name,fmtM(c.total),C.totalMesActual>0?((c.total/C.totalMesActual)*100).toFixed(1)+"%":"0%"])}/>
+          <MiniTable T={T} headers={["#","Cliente","Monto","Sin MEPCO","Δ MEPCO","% Part."]} rows={clientesFiltrados.map((c,i)=>[
+            i+1,
+            c.name.length>22?c.name.slice(0,20)+"...":c.name,
+            fmtM(c.total),
+            (c.mepcoImpact||0)>0 ? fmtM(c.sinMepco) : <span key="sm" style={{color:T.txD}}>—</span>,
+            (c.mepcoImpact||0)>0 ? <span key="dm" style={{color:T.violet,fontWeight:600}}>+{fmtM(c.mepcoImpact)}</span> : <span key="dm" style={{color:T.txD}}>—</span>,
+            C.totalMesActual>0?((c.total/C.totalMesActual)*100).toFixed(1)+"%":"0%",
+          ])}/>
         </SectionCard>
         <SectionCard title="Últimas facturas ingresadas" icon={FileText} T={T} color={T.green}>
           {(C.ultimasFacturas||[]).length>0?(

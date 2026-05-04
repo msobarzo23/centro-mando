@@ -103,8 +103,23 @@ export default function App() {
     const totalMesActual = ventasMesActual.reduce((s,r) => s+r._neto, 0);
     const totalMesAnterior = ventasMesAnterior.reduce((s,r) => s+r._neto, 0);
     const ventasPorMes = []; for (let m=0; m<12; m++) { const rows=ventasRows.filter(r=>r._date.getMonth()===m&&r._date.getFullYear()===curYear); ventasPorMes.push({mes:MESES[m],total:rows.reduce((s,r)=>s+r._neto,0),count:rows.length}); }
-    const clienteMap = {}; ventasMesActual.forEach(r => { const name=r["RAZON SOCIAL"]||r["Razon Social"]||r.razon_social||"Sin nombre"; clienteMap[name]=(clienteMap[name]||0)+r._neto; });
-    const topClientes = Object.entries(clienteMap).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,total])=>({name,total}));
+    const clienteMap = {};
+    ventasMesActual.forEach(r => {
+      const name = r["RAZON SOCIAL"]||r["Razon Social"]||r.razon_social||"Sin nombre";
+      if (!clienteMap[name]) clienteMap[name] = { total: 0, rut: r._rut || "" };
+      clienteMap[name].total += r._neto;
+      if (!clienteMap[name].rut && r._rut) clienteMap[name].rut = r._rut;
+    });
+    const mesActualNum = curMonth + 1;
+    const topClientes = Object.entries(clienteMap)
+      .sort((a,b)=>b[1].total-a[1].total)
+      .slice(0,8)
+      .map(([name, info]) => {
+        const aplica = curYear >= MEPCO_ADJUSTMENT_YEAR && mesActualNum >= MEPCO_ADJUSTMENT_MONTH;
+        const { pct } = aplica ? getReajuste(info.rut, mesActualNum, curYear) : { pct: 0 };
+        const mepcoImpact = pct > 0 ? info.total * pct / (1 + pct) : 0;
+        return { name, total: info.total, rut: info.rut, sinMepco: info.total - mepcoImpact, mepcoImpact };
+      });
     const ventasAnoActual = ventasRows.filter(r=>r._date.getFullYear()===curYear).reduce((s,r)=>s+r._neto,0);
     const ventasAnoAnterior = ventasRows.filter(r=>r._date.getFullYear()===curYear-1).reduce((s,r)=>s+r._neto,0);
 
