@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { RefreshCw, Sun, Moon, Menu, X, Calendar, PiggyBank, TrendingDown, Users, Truck, AlertTriangle, CreditCard, FileDown, Maximize2, Minimize2 } from "lucide-react";
-import { CSV, AUTO_REFRESH_MIN, MESES, TABS, themes, COMODIN_TRACTO, COMODIN_CONDUCTOR, UMBRAL_LIQUIDEZ_AMARILLA, UMBRAL_VIAJES_ALERTA, UMBRAL_OCUPACION_ALERTA } from "./constants.js";
+import { CSV, AUTO_REFRESH_MIN, MESES, TABS, themes, COMODIN_TRACTO, COMODIN_CONDUCTOR, UMBRAL_LIQUIDEZ_AMARILLA, UMBRAL_VIAJES_ALERTA, UMBRAL_OCUPACION_ALERTA, IVA_RATE } from "./constants.js";
 import { parseNum, parseDate, normName, fmtM, pctChange, businessDaysInMonth, businessDaysElapsed, todayMidnight } from "./utils.js";
 import { fetchCSV, fetchFinCSV, fetchRawCSV, parseLeasingResumen } from "./services/fetchData.js";
 import { parseHistorico, computeComparativas } from "./services/historico.js";
@@ -99,11 +99,19 @@ export default function App() {
     const nowMid = todayMidnight();
 
     // ══════════ VENTAS ══════════
-    const ventasRows = (data.ventas||[]).map(r => { const d = parseDate(r.FECHA||r.Fecha||r.fecha); return {...r, _date:d, _neto:parseNum(r.NETO||r.Neto||r.neto), _rut:(r.RUT||r.Rut||r.rut||"").toString().trim()}; }).filter(r => r._date);
+    const ventasRows = (data.ventas||[]).map(r => {
+      const d = parseDate(r.FECHA||r.Fecha||r.fecha);
+      const neto = parseNum(r.NETO||r.Neto||r.neto);
+      const docStr = (r.DOCUMENTO||r.Documento||r.documento||r.TIPO||r.Tipo||r.tipo||"").toString().toUpperCase();
+      const exenta = docStr.includes("EXENTA") || docStr.includes("NO AFECTA");
+      const bruto = exenta ? neto : neto * (1 + IVA_RATE);
+      return {...r, _date:d, _neto:neto, _bruto:bruto, _exenta:exenta, _rut:(r.RUT||r.Rut||r.rut||"").toString().trim()};
+    }).filter(r => r._date);
     const ventasMesActual = ventasRows.filter(r => r._date.getMonth()===curMonth && r._date.getFullYear()===curYear);
     const ventasMesAnterior = ventasRows.filter(r => { const pm=curMonth===0?11:curMonth-1; const py=curMonth===0?curYear-1:curYear; return r._date.getMonth()===pm && r._date.getFullYear()===py; });
     const totalMesActual = ventasMesActual.reduce((s,r) => s+r._neto, 0);
     const totalMesAnterior = ventasMesAnterior.reduce((s,r) => s+r._neto, 0);
+    const totalMesAnteriorBruto = ventasMesAnterior.reduce((s,r) => s+r._bruto, 0);
     const ventasPorMes = []; for (let m=0; m<12; m++) { const rows=ventasRows.filter(r=>r._date.getMonth()===m&&r._date.getFullYear()===curYear); ventasPorMes.push({mes:MESES[m],total:rows.reduce((s,r)=>s+r._neto,0),count:rows.length}); }
     const clienteMap = {};
     ventasMesActual.forEach(r => {
@@ -456,12 +464,13 @@ export default function App() {
     const leasingMesEstimado=leasingTotalCuotaIVA;
     const creditoMesEstimado=creditoValorCuota;
     const margenMesEstimado=totalMesActual-(totalCompromisosMes+leasingMesEstimado+creditoMesEstimado);
+    const margenMesEstimadoCaja=totalMesAnteriorBruto-(totalCompromisosMes+leasingMesEstimado+creditoMesEstimado);
 
     // ══════════ HISTORIZACIÓN ══════════
     const histRows=parseHistorico(data.historico);
     const comparativas=computeComparativas(histRows,now);
 
-    return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,margenMesEstimado,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
+    return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
   }, [data]);
 
   if (loading && !computed) {
