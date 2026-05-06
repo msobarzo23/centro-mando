@@ -72,13 +72,41 @@ export const parseLeasingResumen = (raw) => {
   if (secProxCuotas >= 0) {
     const hdrRow = secProxCuotas + 1;
     const hoy = todayMidnight();
+    const todasCuotas = [];
     for (let i = hdrRow + 1; i < raw.length; i++) {
       const r = raw[i];
       if (!r || !r[0] || String(r[0]).trim() === "") break;
       const fechaStr = String(r[0]).trim();
       const fechaParsed = parseDate(fechaStr);
       const diasCalc = fechaParsed ? Math.ceil((fechaParsed.getTime()-hoy.getTime())/86400000) : parseNum(r[1]);
-      result.proxCuotas.push({ fecha:fechaStr, dias:diasCalc, cuotaUF:parseNum(r[2]), cuotaCLP:parseNum(r[3]), cuotaIVA:parseNum(r[4]), bancos:String(r[5]||"").trim(), estado:String(r[6]||"").trim() });
+      todasCuotas.push({ fecha:fechaStr, dias:diasCalc, _fechaParsed:fechaParsed, cuotaUF:parseNum(r[2]), cuotaCLP:parseNum(r[3]), cuotaIVA:parseNum(r[4]), bancos:String(r[5]||"").trim(), estado:String(r[6]||"").trim() });
+    }
+
+    const futuras = todasCuotas.filter(c => c._fechaParsed && c._fechaParsed.getTime() >= hoy.getTime());
+
+    if (futuras.length < 2 && todasCuotas.length > 0) {
+      const proyectadas = [];
+      const seenKeys = new Set(futuras.map(c => `${c.fecha}|${c.bancos}`));
+      const ordenadas = [...todasCuotas].filter(c => c._fechaParsed).sort((a,b)=>a._fechaParsed-b._fechaParsed);
+      for (const base of ordenadas) {
+        let d = new Date(base._fechaParsed.getFullYear(), base._fechaParsed.getMonth(), base._fechaParsed.getDate());
+        while (d.getTime() < hoy.getTime()) {
+          d = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
+        }
+        const dd = String(d.getDate()).padStart(2,"0");
+        const mm = String(d.getMonth()+1).padStart(2,"0");
+        const yyyy = d.getFullYear();
+        const fechaStr = `${dd}/${mm}/${yyyy}`;
+        const key = `${fechaStr}|${base.bancos}`;
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        const dias = Math.ceil((d.getTime() - hoy.getTime()) / 86400000);
+        proyectadas.push({ fecha:fechaStr, dias, _fechaParsed:d, cuotaUF:base.cuotaUF, cuotaCLP:base.cuotaCLP, cuotaIVA:base.cuotaIVA, bancos:base.bancos, estado:dias<=5?"URGENTE":"PROYECTADA" });
+      }
+      const merged = [...futuras, ...proyectadas].sort((a,b)=>a._fechaParsed-b._fechaParsed);
+      result.proxCuotas = merged.slice(0, 4).map(({_fechaParsed, ...rest}) => ({...rest, estado: rest.dias <= 5 ? "URGENTE" : (rest.estado || "OK")}));
+    } else {
+      result.proxCuotas = futuras.sort((a,b)=>a._fechaParsed-b._fechaParsed).map(({_fechaParsed, ...rest}) => ({...rest, estado: rest.dias <= 5 ? "URGENTE" : (rest.estado || "OK")}));
     }
   }
 

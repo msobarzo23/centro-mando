@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { RefreshCw, Sun, Moon, Menu, X, Calendar, PiggyBank, TrendingDown, Users, Truck, AlertTriangle, CreditCard, FileDown, Maximize2, Minimize2 } from "lucide-react";
 import { CSV, AUTO_REFRESH_MIN, MESES, TABS, themes, COMODIN_TRACTO, COMODIN_CONDUCTOR, UMBRAL_LIQUIDEZ_AMARILLA, UMBRAL_VIAJES_ALERTA, UMBRAL_OCUPACION_ALERTA } from "./constants.js";
-import { parseNum, parseDate, normName, fmtM, pctChange, businessDaysInMonth, businessDaysElapsed } from "./utils.js";
+import { parseNum, parseDate, normName, fmtM, pctChange, businessDaysInMonth, businessDaysElapsed, todayMidnight } from "./utils.js";
 import { fetchCSV, fetchFinCSV, fetchRawCSV, parseLeasingResumen } from "./services/fetchData.js";
 import { parseHistorico, computeComparativas } from "./services/historico.js";
 import { getReajuste, getUpliftPonderado, MEPCO_ADJUSTMENT_MONTH, MEPCO_ADJUSTMENT_YEAR, MEPCO_TRIP_START_MONTH } from "./data/mepcoReajustes.js";
@@ -13,6 +13,7 @@ import FinanzasView from "./views/FinanzasView.jsx";
 import LeasingView from "./views/LeasingView.jsx";
 import CreditoView from "./views/CreditoView.jsx";
 import AlertasView from "./views/AlertasView.jsx";
+import IndicadoresBanner from "./components/IndicadoresBanner.jsx";
 
 export default function App() {
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("cm-theme") !== "light"; } catch { return true; } });
@@ -95,6 +96,7 @@ export default function App() {
   const computed = useMemo(() => {
     if (!data.ventas) return null;
     const now = new Date(), curMonth = now.getMonth(), curYear = now.getFullYear();
+    const nowMid = todayMidnight();
 
     // ══════════ VENTAS ══════════
     const ventasRows = (data.ventas||[]).map(r => { const d = parseDate(r.FECHA||r.Fecha||r.fecha); return {...r, _date:d, _neto:parseNum(r.NETO||r.Neto||r.neto), _rut:(r.RUT||r.Rut||r.rut||"").toString().trim()}; }).filter(r => r._date);
@@ -382,10 +384,10 @@ export default function App() {
     const dapTrabajo=dapRows.filter(r=>getDapType(r)==="trabajo"),dapInversion=dapRows.filter(r=>getDapType(r)==="inversion"),dapCredito=dapRows.filter(r=>getDapType(r)==="credito");
     const totalDAPTrabajo=dapTrabajo.reduce((s,r)=>s+parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),0);const totalDAPInversion=dapInversion.reduce((s,r)=>s+parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),0);const totalDAPCredito=dapCredito.reduce((s,r)=>s+parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),0);const totalDAP=totalDAPTrabajo+totalDAPInversion+totalDAPCredito;
     const gananciaDAPTrabajo=dapTrabajo.reduce((s,r)=>s+parseNum(r.Ganancia||r.ganancia),0);const gananciaDAPInversion=dapInversion.reduce((s,r)=>s+parseNum(r.Ganancia||r.ganancia),0);const gananciaDAPCredito=dapCredito.reduce((s,r)=>s+parseNum(r.Ganancia||r.ganancia),0);const gananciaDAP=gananciaDAPTrabajo+gananciaDAPInversion+gananciaDAPCredito;
-    const dapProximos=dapRows.map(r=>({banco:r.Banco||r.banco,monto:parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),montoFinal:parseNum(r["Monto Final"]||r.MontoFinal||r.monto_final),vencimiento:parseDate(r.Vencimiento||r.vencimiento),tipo:r.Tipo||r.tipo,tasa:r.Tasa||r.tasa,_tipoNorm:getDapType(r)})).filter(r=>r.vencimiento&&r.vencimiento>=now).sort((a,b)=>a.vencimiento-b.vencimiento).slice(0,10);
+    const dapProximos=dapRows.map(r=>({banco:r.Banco||r.banco,monto:parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),montoFinal:parseNum(r["Monto Final"]||r.MontoFinal||r.monto_final),vencimiento:parseDate(r.Vencimiento||r.vencimiento),tipo:r.Tipo||r.tipo,tasa:r.Tasa||r.tasa,_tipoNorm:getDapType(r)})).filter(r=>r.vencimiento&&r.vencimiento>=nowMid).sort((a,b)=>a.vencimiento-b.vencimiento).slice(0,10);
     const fondosRows=(data.finFondos||[]).filter(r=>r.Fondo||r.fondo);const fondosSaldos=fondosRows.filter(r=>parseNum(r["Valor Actual"]||r.ValorActual||r.valor_actual)>0).map(r=>({fondo:r.Fondo||r.fondo,admin:r.Administradora||r.administradora,invertido:parseNum(r["Monto Invertido"]||r.MontoInvertido||r.monto_invertido),actual:parseNum(r["Valor Actual"]||r.ValorActual||r.valor_actual),rentPct:r["Rentabilidad %"]||r.rentabilidad_pct||""}));const totalFondos=fondosSaldos.reduce((s,r)=>s+r.actual,0);const totalInversionReal=totalDAPInversion+totalFondos;const totalInversiones=totalDAP+totalFondos;
     const calRows=(data.finCalendario||[]).map(r=>({fecha:parseDate(r.Fecha||r.fecha),monto:parseNum(r.Monto||r.monto),guardado:parseNum(r.Guardado||r.guardado),falta:parseNum(r.Falta||r.falta),concepto:r.Concepto||r.concepto||"",estado:r.Estado||r.estado||"",mes:r.Mes||r.mes,semana:r.Semana||r.semana})).filter(r=>r.fecha);
-    const nextWeek=new Date(now);nextWeek.setDate(nextWeek.getDate()+7);const compromisosProx=calRows.filter(r=>r.fecha>=now&&r.fecha<=nextWeek).sort((a,b)=>a.fecha-b.fecha);const totalCompromisosProx=compromisosProx.reduce((s,r)=>s+r.monto,0);
+    const nextWeek=new Date(nowMid);nextWeek.setDate(nextWeek.getDate()+7);const compromisosProx=calRows.filter(r=>r.fecha>=nowMid&&r.fecha<=nextWeek).sort((a,b)=>a.fecha-b.fecha);const totalCompromisosProx=compromisosProx.reduce((s,r)=>s+r.monto,0);
     const compromisosMes=calRows.filter(r=>r.fecha&&r.fecha.getMonth()===curMonth&&r.fecha.getFullYear()===curYear);const totalCompromisosMes=compromisosMes.reduce((s,r)=>s+r.monto,0);const totalGuardadoMes=compromisosMes.reduce((s,r)=>s+r.guardado,0);
 
     // ══════════ COBERTURA SEMANAL ══════════
@@ -411,11 +413,11 @@ export default function App() {
       coberturaSemanas.push({semana:w+1,inicio:ws,fin:we,label:`${ws.getDate().toString().padStart(2,"0")}/${(ws.getMonth()+1).toString().padStart(2,"0")} — ${we.getDate().toString().padStart(2,"0")}/${(we.getMonth()+1).toString().padStart(2,"0")}`,compromisos:compMonto,dapVence:dapMonto,cajaInicio,ingresos:ingresosSemana,neto,ratio,dapCount:dapSemana.length,compCount:compSemana.length,guardado:guardadoSemana,falta:faltaSemana});
     }
     const dapVigentesConTipo=(data.finDAP||[]).filter(r=>{const v=(r.Vigente||r.vigente||"").toString().toLowerCase();return v==="si"||v==="sí"||v==="yes";}).map(r=>({vencimiento:parseDate(r.Vencimiento||r.vencimiento),montoFinal:parseNum(r["Monto Final"]||r.MontoFinal||r.monto_final)||parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),banco:r.Banco||r.banco,tipo:getDapType(r)})).filter(r=>r.vencimiento);
-    const next30=new Date(now);next30.setDate(next30.getDate()+30);
-    const comp30=calRows.filter(r=>r.fecha>=now&&r.fecha<=next30).reduce((s,r)=>s+r.monto,0);
-    const dapTrabajoVence30=dapVigentesConTipo.filter(r=>r.tipo==="trabajo"&&r.vencimiento>=now&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
-    const dapCreditoVence30=dapVigentesConTipo.filter(r=>r.tipo==="credito"&&r.vencimiento>=now&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
-    const dapInversionVence30=dapVigentesConTipo.filter(r=>r.tipo==="inversion"&&r.vencimiento>=now&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
+    const next30=new Date(nowMid);next30.setDate(next30.getDate()+30);
+    const comp30=calRows.filter(r=>r.fecha>=nowMid&&r.fecha<=next30).reduce((s,r)=>s+r.monto,0);
+    const dapTrabajoVence30=dapVigentesConTipo.filter(r=>r.tipo==="trabajo"&&r.vencimiento>=nowMid&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
+    const dapCreditoVence30=dapVigentesConTipo.filter(r=>r.tipo==="credito"&&r.vencimiento>=nowMid&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
+    const dapInversionVence30=dapVigentesConTipo.filter(r=>r.tipo==="inversion"&&r.vencimiento>=nowMid&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
     const dap30=dapTrabajoVence30+dapCreditoVence30+dapInversionVence30;
     const liquidez30=totalCaja+dapTrabajoVence30+totalFondos;
     const colchonAdicional30=dapInversionVence30;
@@ -426,7 +428,7 @@ export default function App() {
 
     // ══════════ ALERTAS ══════════
     const alertas=[];
-    calRows.filter(r=>r.falta>0&&r.fecha>=now&&r.fecha<=nextWeek).forEach(r=>{alertas.push({type:"warning",icon:Calendar,msg:`${r.concepto}: falta ${fmtM(r.falta)} para el ${r.fecha.toLocaleDateString("es-CL")}`});});
+    calRows.filter(r=>r.falta>0&&r.fecha>=nowMid&&r.fecha<=nextWeek).forEach(r=>{alertas.push({type:"warning",icon:Calendar,msg:`${r.concepto}: falta ${fmtM(r.falta)} para el ${r.fecha.toLocaleDateString("es-CL")}`});});
     dapProximos.filter(r=>r.vencimiento<=nextWeek).forEach(r=>{alertas.push({type:"info",icon:PiggyBank,msg:`DAP ${r.banco} por ${fmtM(r.monto)} vence el ${r.vencimiento.toLocaleDateString("es-CL")}`});});
     if(viajesCorteAnterior>0&&viajesCorteActual<viajesCorteAnterior*UMBRAL_VIAJES_ALERTA){alertas.push({type:"danger",icon:TrendingDown,msg:`Viajes al día ${dayOfMonth}: ${viajesCorteActual} vs ${viajesCorteAnterior} mes anterior (${pctChange(viajesCorteActual,viajesCorteAnterior).toFixed(1)}%)`});}
     if(totalContratados>0&&pctOcupacionConductores<UMBRAL_OCUPACION_ALERTA){alertas.push({type:"warning",icon:Users,msg:`Ocupación conductores: ${pctOcupacionConductores.toFixed(1)}% — ${totalEnExpedicion} de ${totalContratados} en expedición`});}
@@ -446,10 +448,10 @@ export default function App() {
 
     // ══════════ CREDITO ══════════
     const creditoRows=(data.credito||[]).map(r=>({cuota:parseNum(r["N° Cuota"]||r.Cuota||r.cuota),fecha:r["Fecha Vencimiento"]||r.Fecha||r.fecha||"",capital:parseNum(r["Amortización Capital"]||r["Amortizacion Capital"]||r.capital),interes:parseNum(r["Monto Interés"]||r["Monto Interes"]||r.interes),valorCuota:parseNum(r["Valor Cuota"]||r.ValorCuota||r.valor_cuota),saldo:parseNum(r["Saldo Insoluto"]||r.SaldoInsoluto||r.saldo)})).filter(r=>r.cuota>0);
-    const creditoProxima=creditoRows.find(r=>{const fd=parseDate(r.fecha);return fd&&fd>=now&&r.valorCuota>0;});const creditoCuotasFuturas=creditoRows.filter(r=>{const fd=parseDate(r.fecha);return fd&&fd>=now;});
+    const creditoProxima=creditoRows.find(r=>{const fd=parseDate(r.fecha);return fd&&fd>=nowMid&&r.valorCuota>0;});const creditoCuotasFuturas=creditoRows.filter(r=>{const fd=parseDate(r.fecha);return fd&&fd>=nowMid;});
     const creditoSaldoActual=creditoCuotasFuturas.length>0?creditoCuotasFuturas[0].saldo:(creditoRows.length>0?creditoRows[creditoRows.length-1].saldo:0);const creditoDeudaTotal=creditoCuotasFuturas.reduce((s,r)=>s+r.valorCuota,0);const creditoValorCuota=creditoRows.find(r=>r.valorCuota>0)?.valorCuota||0;const creditoTotalCuotas=creditoRows.length;
-    const creditoCuotasPagadas=creditoRows.filter(r=>{const fd=parseDate(r.fecha);return fd&&fd<now;}).length;const creditoCuotasPorPagar=creditoTotalCuotas-creditoCuotasPagadas;const creditoTotalIntereses=creditoRows.reduce((s,r)=>s+r.interes,0);const creditoTotalCapital=creditoRows.reduce((s,r)=>s+r.capital,0);const creditoInteresesPendientes=creditoCuotasFuturas.reduce((s,r)=>s+r.interes,0);
-    if(creditoProxima){const fd=parseDate(creditoProxima.fecha);if(fd){const dc=Math.ceil((fd-now)/86400000);if(dc<=7&&dc>=0){alertas.push({type:"info",icon:CreditCard,msg:`Crédito Itaú: cuota #${creditoProxima.cuota} de ${fmtM(creditoProxima.valorCuota)} vence en ${dc} días`});}}}
+    const creditoCuotasPagadas=creditoRows.filter(r=>{const fd=parseDate(r.fecha);return fd&&fd<nowMid;}).length;const creditoCuotasPorPagar=creditoTotalCuotas-creditoCuotasPagadas;const creditoTotalIntereses=creditoRows.reduce((s,r)=>s+r.interes,0);const creditoTotalCapital=creditoRows.reduce((s,r)=>s+r.capital,0);const creditoInteresesPendientes=creditoCuotasFuturas.reduce((s,r)=>s+r.interes,0);
+    if(creditoProxima){const fd=parseDate(creditoProxima.fecha);if(fd){const dc=Math.ceil((fd-nowMid)/86400000);if(dc<=7&&dc>=0){alertas.push({type:"info",icon:CreditCard,msg:`Crédito Itaú: cuota #${creditoProxima.cuota} de ${fmtM(creditoProxima.valorCuota)} vence en ${dc} días`});}}}
 
     const leasingMesEstimado=leasingTotalCuotaIVA;
     const creditoMesEstimado=creditoValorCuota;
@@ -519,6 +521,8 @@ export default function App() {
           <button onClick={toggleTheme} style={{background:"none",border:"none",cursor:"pointer",color:T.txM,padding:4}}>{dark?<Sun size={16}/>:<Moon size={16}/>}</button>
         </div>
       </header>
+
+      <IndicadoresBanner T={T}/>
 
       <div style={{display:"flex",minHeight:"calc(100vh - 52px)"}}>
         <nav className="sidebar" style={{width:200,background:T.bg2,borderRight:`1px solid ${T.border}`,padding:"16px 8px",flexShrink:0,display:"flex",flexDirection:"column",gap:2}}>

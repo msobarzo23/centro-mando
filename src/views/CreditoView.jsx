@@ -2,7 +2,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import { Banknote, DollarSign, Calendar, Target, CreditCard, Clock, TrendingDown, FileSpreadsheet } from "lucide-react";
-import { fmtM, fmtFull, parseDate } from "../utils.js";
+import { fmtM, fmtFull, parseDate, todayMidnight } from "../utils.js";
 import KpiCard from "../components/KpiCard.jsx";
 import MiniTable from "../components/MiniTable.jsx";
 import SectionCard from "../components/SectionCard.jsx";
@@ -16,7 +16,7 @@ export default function CreditoView({ C, T }) {
 
   const allCuotas = C.creditoRows || [];
   const { page, setPage, totalPages, pageItems } = usePagination(allCuotas, 10);
-  const now = new Date();
+  const now = todayMidnight();
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
