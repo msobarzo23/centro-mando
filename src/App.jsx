@@ -496,8 +496,8 @@ export default function App() {
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <button onClick={()=>setMobileMenu(!mobileMenu)} style={{background:"none",border:"none",cursor:"pointer",display:"none",color:T.tx,padding:4}} className="mobile-menu-btn">{mobileMenu?<X size={20}/>:<Menu size={20}/>}</button>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <img src="/logo-bello.svg" alt="Transportes Bello" style={{height:36,width:"auto",display:"block",filter:dark?"brightness(0) invert(1)":"none"}}/>
-            <div style={{height:28,width:1,background:T.border}}/>
+            <img src="/logo-bello.svg" alt="Transportes Bello" style={{height:56,width:"auto",display:"block",filter:dark?"brightness(0) invert(1)":"none"}}/>
+            <div style={{height:44,width:1,background:T.border}}/>
             <div>
               <div style={{fontSize:15,fontWeight:700,color:T.tx,letterSpacing:-0.3}}>Centro de Mando — Don Luis Bello</div>
               <div style={{fontSize:10,color:T.txD}}>Transportes Bello e Hijos Ltda.</div>
