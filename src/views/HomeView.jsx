@@ -5,9 +5,11 @@ import {
 import {
   DollarSign, Truck, Building2, PiggyBank, TrendingUp, BarChart3,
   Calendar, Users, AlertTriangle, Zap, Gauge, CreditCard, History,
+  Fuel,
 } from "lucide-react";
 import { Sparkles } from "lucide-react";
 import { MESES, MESES_FULL, MEPCO_ADJUSTMENT_MONTH } from "../constants.js";
+import { POZO_COPEC_TOTALES } from "../data/copecSobrecosto.js";
 import { fmtM, fmtFull, fmtPct, pctChange, getSaludo, getFechaLarga } from "../utils.js";
 import KpiCard from "../components/KpiCard.jsx";
 import MiniTable from "../components/MiniTable.jsx";
@@ -146,6 +148,38 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={TrendingUp} label={`Fact. proyectada ${C.curMonth<11?MESES[C.curMonth+1]:"Ene"}`} value={C.proyMesSiguientePorViajes>0?fmtM(C.proyMesSiguientePorViajes):"—"} T={T} sub={C.proyMesSiguientePorViajes>0?`Basada en viajes ${MESES[C.curMonth]} × tarifa hist.`:"Sin viajes mes actual"} color={T.teal} colorBg={T.tealBg} badge="PRÓX. MES"/>
         <KpiCard icon={Zap} label="Impacto MEPCO mes" value={C.impactoMepcoMes>0?"+"+fmtM(C.impactoMepcoMes):"—"} T={T} sub={C.mepcoActivo?(C.impactoMepcoAcum>0?`Atribuible al reajuste · Acum. desde mayo: +${fmtM(C.impactoMepcoAcum)}`:"Sin facturación con reajuste aún"):"Pendiente (desde mayo 2026)"} color={T.amber} colorBg={T.amberBg} badge={C.mepcoActivo?"VIGENTE":"PREVIO"}/>
+        {C.pozoCombustibleAcum>0 && (() => {
+          const cob = C.coberturaPozoMepco;
+          const cobPct = cob !== null && cob !== undefined ? (cob*100).toFixed(0) : null;
+          const cobColor = cob === null ? T.txM : cob >= 1 ? T.green : cob >= 0.5 ? T.amber : T.red;
+          const cobLabel = cob === null ? "—" : cob >= 1 ? "Cubierto" : `${cobPct}% cubierto`;
+          return (
+            <KpiCard
+              icon={Fuel}
+              label="Pozo combustible MEPCO"
+              value={"-"+fmtM(C.pozoCombustibleAcum)}
+              T={T}
+              color={T.red}
+              colorBg={T.redBg}
+              badge="ACUM."
+              sub={`${C.pozoCombustibleDocs} fact. · ${C.pozoCombustibleVolM3.toFixed(0)} m³ · ${cobLabel}`}
+              tooltip={
+                <div>
+                  <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Sobrecosto petróleo por alza MEPCO</div>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Pagado COPEC (post-30/Abr)</span><strong>{fmtM(POZO_COPEC_TOTALES.totalPagado)}</strong></div>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>− Costo a precio antes (19-Mar)</span><strong>{fmtM(POZO_COPEC_TOTALES.totalBaseline)}</strong></div>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700,color:T.red}}><span>= Pozo a cubrir</span><strong>{fmtM(C.pozoCombustibleAcum)}</strong></div>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Reajuste cobrado clientes (acum.)</span><strong style={{color:T.green}}>+{fmtM(C.impactoMepcoAcum||0)}</strong></div>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>Brecha</span><strong style={{color:cobColor}}>{C.brechaPozoMepco>0?"−":"+"}{fmtM(Math.abs(C.brechaPozoMepco))} ({cobLabel})</strong></div>
+                  <div style={{fontSize:10,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
+                    Baseline: $814.288/m³ c/IVA (19-Mar-2026, último día con subsidio MEPCO).<br/>
+                    Fuente: COPEC DETALLADO 2 — actualizado al {C.pozoCombustibleMeta?.ultimaActualizacion}.
+                  </div>
+                </div>
+              }
+            />
+          );
+        })()}
         <KpiCard icon={BarChart3} label="Margen estimado mes" value={fmtM(C.margenMesEstimado)} T={T} sub={`Fact. ${fmtM(C.totalMesActual)} − costos fijos`} color={C.margenMesEstimado>=0?T.green:T.red} colorBg={C.margenMesEstimado>=0?T.greenBg:T.redBg}/>
         <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA)+" c/IVA"} T={T} sub={`${C.leasingContratosActivos} contratos · ${C.leasingTractosTotal} tractos`} color={T.violet} colorBg={T.violetBg}/>
         <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoDeudaTotal)} T={T} sub={C.creditoProxima?`Próxima: ${fmtM(C.creditoProxima.valorCuota)} · cuota #${C.creditoProxima.cuota}`:"En gracia"} color={T.red} colorBg={T.redBg}/>

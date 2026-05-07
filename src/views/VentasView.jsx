@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import { useState } from "react";
 import {
-  DollarSign, TrendingUp, Target, BarChart3, Activity, Users, FileText, Zap, FileSpreadsheet, Search,
+  DollarSign, TrendingUp, Target, BarChart3, Activity, Users, FileText, Zap, FileSpreadsheet, Search, Fuel,
 } from "lucide-react";
 import { Sparkles } from "lucide-react";
 import { MESES, MESES_FULL, MEPCO_ADJUSTMENT_MONTH } from "../constants.js";
@@ -82,6 +82,23 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
         <KpiCard icon={TrendingUp} label="Acumulado año" value={fmtM(C.ventasAnoActual)} T={T} sub={varAno!==0?fmtPct(varAno)+` vs ${C.prevYear}`:undefined} color={T.green} colorBg={T.greenBg}/>
         <KpiCard icon={Target} label="Proyección anual" value={fmtM(projection)} T={T} sub={`${fmtPct(projPct)} vs ${C.prevYear}`} color={T.amber} colorBg={T.amberBg} badge={projectionMode.toUpperCase()}/>
         <KpiCard icon={Zap} label="Impacto MEPCO acum." value={C.impactoMepcoAcum>0?"+"+fmtM(C.impactoMepcoAcum):"—"} T={T} sub={C.mepcoActivo?"Atribuible al reajuste · desde mayo 2026":"Inicia mayo 2026"} color={T.violet} colorBg={T.violetBg} badge={C.mepcoActivo?"VIGENTE":"PREVIO"}/>
+        {C.pozoCombustibleAcum>0 && (() => {
+          const cob = C.coberturaPozoMepco;
+          const cobPct = cob !== null && cob !== undefined ? (cob*100).toFixed(0) : null;
+          const cobLabel = cob === null ? "—" : cob >= 1 ? "Cubierto" : `${cobPct}% cubierto`;
+          return (
+            <KpiCard
+              icon={Fuel}
+              label="Pozo combustible MEPCO"
+              value={"-"+fmtM(C.pozoCombustibleAcum)}
+              T={T}
+              color={T.red}
+              colorBg={T.redBg}
+              badge="ACUM."
+              sub={`Brecha: ${C.brechaPozoMepco>0?"−":"+"}${fmtM(Math.abs(C.brechaPozoMepco))} · ${cobLabel}`}
+            />
+          );
+        })()}
       </div>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
