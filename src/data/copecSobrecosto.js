@@ -5,7 +5,8 @@
 // regir el precio post-normalización MEPCO.
 //
 // Cálculo:
-//   Para cada factura COPEC con vencimiento ≥ 30/04/2026 y total ≥ $10M:
+//   Para cada factura COPEC con vencimiento entre 30/04/2026 y 29/05/2026 y
+//   total ≥ $10M:
 //     volumen_m3   = NETO_factura / Precio_Base_brief_de_la_semana
 //     baseline     = volumen_m3 × $814.288 (precio c/IVA del 19-Mar, último
 //                    día con subsidio MEPCO profundo, antes del salto)
@@ -25,16 +26,17 @@ export const POZO_COPEC_META = {
   baselinePrecioPorM3CIVA: 814288,
   baselineDescripcion:
     "Última semana con subsidio MEPCO profundo, antes de la normalización del 26-Mar",
-  cutoffFechaVencimiento: "2026-04-30",
+  ventanaVencimientoIni: "2026-04-30",
+  ventanaVencimientoFin: "2026-05-29",
   umbralPetroleoMin: 10_000_000,
 };
 
 export const POZO_COPEC_TOTALES = {
-  docs: 57,
-  volumenTotalM3: 1693.65,
-  totalPagado: 2_506_259_337,
-  totalBaseline: 1_379_121_973,
-  pozoAcumulado: 1_127_137_364,
+  docs: 49,
+  volumenTotalM3: 1454.55,
+  totalPagado: 2_147_966_373,
+  totalBaseline: 1_184_419_032,
+  pozoAcumulado: 963_547_341,
 };
 
 // Pozo por mes de vencimiento (las dos facturas con venc. exactos al 30/04
@@ -46,13 +48,6 @@ export const POZO_COPEC_POR_MES = {
     pagado: 2_147_966_373,
     baseline: 1_184_419_032,
     pozo: 963_547_341,
-  },
-  "2026-06": {
-    docs: 8,
-    volumenM3: 239.11,
-    pagado: 358_292_964,
-    baseline: 194_702_941,
-    pozo: 163_590_023,
   },
 };
 
