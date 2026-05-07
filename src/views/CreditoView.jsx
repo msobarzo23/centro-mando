@@ -9,6 +9,7 @@ import SectionCard from "../components/SectionCard.jsx";
 import ChartTooltip from "../components/ChartTooltip.jsx";
 import Pagination from "../components/Pagination.jsx";
 import { usePagination } from "../hooks/usePagination.js";
+import DashboardLink from "../components/DashboardLink.jsx";
 
 export default function CreditoView({ C, T }) {
   const proxFecha = C.creditoProxima ? parseDate(C.creditoProxima.fecha) : null;
@@ -117,6 +118,10 @@ export default function CreditoView({ C, T }) {
           </>
         ) : <p style={{fontSize:12,color:T.txM}}>Sin datos de cuotas</p>}
       </SectionCard>
+
+      <DashboardLink T={T} color={T.teal} colorBg={T.tealBg}
+        url="https://centro-financiero-eight.vercel.app/"
+        label="Centro Financiero — pestaña Crédito con cronograma completo" />
     </div>
   );
 }

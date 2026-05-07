@@ -6,6 +6,7 @@ import MiniTable from "../components/MiniTable.jsx";
 import SectionCard from "../components/SectionCard.jsx";
 import Pagination from "../components/Pagination.jsx";
 import { usePagination } from "../hooks/usePagination.js";
+import DashboardLink from "../components/DashboardLink.jsx";
 
 export default function LeasingView({ C, T }) {
   const leasingDetRows = C.leasingDet || [];
@@ -111,6 +112,10 @@ export default function LeasingView({ C, T }) {
         </div>
         <Pagination page={detPage} totalPages={detTotalPages} setPage={setDetPage} T={T}/>
       </SectionCard>
+
+      <DashboardLink T={T} color={T.teal} colorBg={T.tealBg}
+        url="https://centro-financiero-eight.vercel.app/"
+        label="Centro Financiero — pestaña Leasing con detalle por contrato" />
     </div>
   );
 }

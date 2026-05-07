@@ -15,6 +15,7 @@ import MiniTable from "../components/MiniTable.jsx";
 import SectionCard from "../components/SectionCard.jsx";
 import ChartTooltip from "../components/ChartTooltip.jsx";
 import MepcoBanner from "../components/MepcoBanner.jsx";
+import DashboardLink from "../components/DashboardLink.jsx";
 
 export default function VentasView({ C, T, projectionMode, setProjectionMode }) {
   const [monthRange, setMonthRange] = useState(12);
@@ -301,6 +302,10 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
           ):<p style={{fontSize:12,color:T.txM,padding:8}}>Sin facturas recientes</p>}
         </SectionCard>
       </div>
+
+      <DashboardLink T={T} color={T.accent} colorBg={T.accentBg}
+        url="https://dashboard-ventas-seven.vercel.app/"
+        label="Dashboard Comercial — clientes, MEPCO, briefing y proyecciones" />
     </div>
   );
 }

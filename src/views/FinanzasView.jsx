@@ -6,6 +6,7 @@ import { fmtM, fmtFull, parseDate } from "../utils.js";
 import KpiCard from "../components/KpiCard.jsx";
 import MiniTable from "../components/MiniTable.jsx";
 import SectionCard from "../components/SectionCard.jsx";
+import DashboardLink from "../components/DashboardLink.jsx";
 
 export default function FinanzasView({ C, T }) {
   const DapBadge = ({ label, color, bg }) => (
@@ -116,6 +117,10 @@ export default function FinanzasView({ C, T }) {
         <SectionCard title="Compromisos próximos 7 días" icon={Calendar} T={T} color={T.amber}>{C.compromisosProx?.length>0?(<MiniTable T={T} headers={["Fecha","Concepto","Monto","Guardado","Falta"]} rows={C.compromisosProx.map(r=>[r.fecha.toLocaleDateString("es-CL",{weekday:"short",day:"2-digit",month:"short"}),r.concepto.length>25?r.concepto.slice(0,23)+"...":r.concepto,fmtM(r.monto),fmtM(r.guardado),r.falta>0?fmtM(r.falta):"Ok"])}/>):<p style={{fontSize:12,color:T.txM,padding:8}}>Sin compromisos pendientes</p>}</SectionCard>
         <SectionCard title={`Calendario del mes — ${MESES_FULL[C.curMonth]}`} icon={Clock} T={T} color={T.accent}><MiniTable T={T} maxRows={15} headers={["Fecha","Concepto","Monto","Estado"]} rows={(C.compromisosMes||[]).sort((a,b)=>a.fecha-b.fecha).map(r=>[r.fecha.toLocaleDateString("es-CL",{day:"2-digit",month:"short"}),r.concepto.length>28?r.concepto.slice(0,26)+"...":r.concepto,fmtM(r.monto),r.estado||"-"])}/></SectionCard>
       </div>
+
+      <DashboardLink T={T} color={T.teal} colorBg={T.tealBg}
+        url="https://centro-financiero-eight.vercel.app/"
+        label="Centro Financiero — bancos, flujo de caja, inversiones y cobranzas" />
     </div>
   );
 }

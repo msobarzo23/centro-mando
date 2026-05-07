@@ -12,6 +12,7 @@ import KpiCard from "../components/KpiCard.jsx";
 import SectionCard from "../components/SectionCard.jsx";
 import ChartTooltip from "../components/ChartTooltip.jsx";
 import OccupationBar from "../components/OccupationBar.jsx";
+import DashboardLink from "../components/DashboardLink.jsx";
 
 export default function OperacionesView({ C, T }) {
   const [monthRange, setMonthRange] = useState(12);
@@ -157,6 +158,10 @@ export default function OperacionesView({ C, T }) {
           </div>
         </SectionCard>
       </div>
+
+      <DashboardLink T={T} color={T.green} colorBg={T.greenBg}
+        url="https://dashboard-operaciones.vercel.app/"
+        label="Dashboard de Operaciones — viajes, rutas, ocupación y conductores" />
     </div>
   );
 }
