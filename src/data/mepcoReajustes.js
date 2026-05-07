@@ -49,6 +49,10 @@ export const MEPCO_REAJUSTES_SIMPLE = {
   "78.608.270-6": { razon: "PROQUIMIN LTDA", pct: 0.16 },
   "76.257.082-3": { razon: "QUIMICOS FAS SpA", pct: 0.268 },
   "76.148.338-2": { razon: "SOCIEDAD DE PROCESAMIENTO DE MOLIBDENO SPA", pct: 0.075 },
+  // SODIMAC: promedio ponderado por monto de 15 viajes del reajuste 26-mar-2026
+  // (Antofagasta 18.30% × 8, Copiapó 14.68% × 6, A.Hospicio 17.26% × 1).
+  // Se aplica un % único porque el dashboard cruza por RUT, no por destino.
+  "96.792.430-K": { razon: "SODIMAC S.A.", pct: 0.1704, observacion: "Promedio ponderado por monto del reajuste del 26-mar-2026 (Antofagasta 18.30%, Copiapó 14.68%, A.Hospicio 17.26%)" },
   "76.133.595-2": { razon: "SOLMAX CHILE SPA", pct: 0.30 },
   "96.593.480-4": { razon: "SUN S.A.", pct: 0.268 },
   "96.641.530-4": { razon: "TECNOTAMBORES S.A.", pct: 0.306 },
