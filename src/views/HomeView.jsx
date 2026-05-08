@@ -172,7 +172,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
                   <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Reajuste cobrado clientes (acum.)</span><strong style={{color:T.green}}>+{fmtM(C.impactoMepcoAcum||0)}</strong></div>
                   <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>Brecha</span><strong style={{color:cobColor}}>{C.brechaPozoMepco>0?"−":"+"}{fmtM(Math.abs(C.brechaPozoMepco))} ({cobLabel})</strong></div>
                   <div style={{fontSize:10,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
-                    Baseline: $814.288/m³ c/IVA (19-Mar-2026, último día con subsidio MEPCO).<br/>
+                    Baseline: $684.276/m³ s/IVA (19-Mar-2026, último día con subsidio MEPCO). Montos netos.<br/>
                     Fuente: COPEC DETALLADO 2 — actualizado al {C.pozoCombustibleMeta?.ultimaActualizacion}.
                   </div>
                 </div>
