@@ -229,7 +229,17 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
             <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
             <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
             <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v.toFixed(0)}M`} width={55}/>
-            <Tooltip content={<ChartTooltip T={T} valuesInM/>}/>
+            <Tooltip content={<ChartTooltip T={T} valuesInM extraRow={(pl)=>{
+              const real = pl.find(p=>p.dataKey==="real")?.value;
+              const faltante = pl.find(p=>p.dataKey==="proyectadoActual")?.value;
+              if (real==null || faltante==null) return null;
+              return (
+                <div style={{borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:4,color:T.amber,display:"flex",gap:8,fontWeight:700}}>
+                  <span>Total proy. mes:</span>
+                  <span>{fmtM((real+faltante)*1e6)}</span>
+                </div>
+              );
+            }}/>}/>
             <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
             <Bar dataKey="anterior" fill={T.txD} opacity={0.45} radius={[3,3,0,0]} name={String(C.prevYear)}/>
             <Bar dataKey="real" stackId="curr" fill={T.accent} radius={[3,3,0,0]} name={`${C.curYear} Real`}/>
