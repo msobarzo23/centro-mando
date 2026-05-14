@@ -58,6 +58,7 @@ export const MEPCO_REAJUSTES_SIMPLE = {
   "96.641.530-4": { razon: "TECNOTAMBORES S.A.", pct: 0.306 },
   "84.912.700-4": { razon: "TEHMCO S.A.", pct: 0.30 },
   "76.964.227-7": { razon: "TERRAEX SPA", pct: 0.268, observacion: "A partir del 1° de abril" },
+  "77.753.250-2": { razon: "TRANSPORTE CALIDRA LTDA", pct: 0.2161, observacion: "18% pozo / quebrada blanca" },
   "78.851.880-3": { razon: "VEOLIA WATER TECHNOLOGIES & SOLUTIONS CHILE LTDA.", pct: 0.20 },
   "76.076.066-8": { razon: "WE CONSULTING SPA", pct: 0.268 },
   "76.309.712-9": { razon: "YURA CHILE SPA", pct: 0.18 },
