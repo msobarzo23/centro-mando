@@ -18,6 +18,7 @@ import ChartTooltip from "../components/ChartTooltip.jsx";
 import MepcoBanner from "../components/MepcoBanner.jsx";
 import HighlightsBanner from "../components/HighlightsBanner.jsx";
 import SemaforoEjecutivo from "../components/SemaforoEjecutivo.jsx";
+import ContadorSinAccidentes from "../components/ContadorSinAccidentes.jsx";
 
 const COMPARE_LABELS = {
   day:   { selector: "Hoy",     vsCorto: "vs ayer",        valor: "Hoy" },
@@ -118,6 +119,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
 
       <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1} compact={true} projections={C.projections}/>
       <HighlightsBanner C={C} T={T}/>
+      <ContadorSinAccidentes C={C} T={T} variant="hero"/>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={DollarSign} label="Facturación mes" value={fmtM(C.totalMesActual)} T={T} sub={C.totalMesAnterior>0?fmtPct(pctChange(C.totalMesActual,C.totalMesAnterior))+" vs mes ant.":undefined} color={T.accent} colorBg={T.accentBg} trend={trendVentas12m} trendLabel="Últimos 12 meses"/>

@@ -13,6 +13,7 @@ import SectionCard from "../components/SectionCard.jsx";
 import ChartTooltip from "../components/ChartTooltip.jsx";
 import OccupationBar from "../components/OccupationBar.jsx";
 import DashboardLink from "../components/DashboardLink.jsx";
+import ContadorSinAccidentes from "../components/ContadorSinAccidentes.jsx";
 
 export default function OperacionesView({ C, T }) {
   const [monthRange, setMonthRange] = useState(12);
@@ -63,6 +64,8 @@ export default function OperacionesView({ C, T }) {
           </div>}
         />
       </div>
+
+      <ContadorSinAccidentes C={C} T={T} variant="panel"/>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={Users} label="Conductores contratados" value={String(C.totalContratados||0)} T={T} color={T.accent} colorBg={T.accentBg}/>
