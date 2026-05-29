@@ -162,10 +162,15 @@ export default function OperacionesView({ C, T }) {
           {(()=>{
             const filas=(C.viajesPorMesComparado||[]).filter(m=>m.actual>0||m.anterior>0);
             if(filas.length===0)return null;
-            const totActual=filas.reduce((s,m)=>s+m.actual,0);
-            const totAnterior=filas.reduce((s,m)=>s+m.anterior,0);
+            // El total compara solo los meses que ya tienen viajes este ano,
+            // para no castigar el acumulado con meses futuros aun sin datos.
+            const mesesConViajes=filas.filter(m=>m.actual>0);
+            const totActual=mesesConViajes.reduce((s,m)=>s+m.actual,0);
+            const totAnterior=mesesConViajes.reduce((s,m)=>s+m.anterior,0);
             const totDif=totActual-totAnterior;
             const totPct=totAnterior>0?pctChange(totActual,totAnterior):0;
+            const primerMes=mesesConViajes[0]?.mes, ultimoMes=mesesConViajes[mesesConViajes.length-1]?.mes;
+            const rango=mesesConViajes.length>0?(primerMes===ultimoMes?primerMes:`${primerMes}–${ultimoMes}`):"";
             const cellR={padding:"6px 10px",textAlign:"right",fontSize:11};
             return (
               <div style={{overflowX:"auto",marginTop:12}}>
@@ -180,14 +185,17 @@ export default function OperacionesView({ C, T }) {
                     {filas.map((m,i)=>{
                       const dif=m.actual-m.anterior;
                       const col=dif>=0?T.green:T.red;
+                      const sinDato=m.actual===0; // mes aun no transcurrido este ano
                       return(
                         <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
                           <td style={{padding:"6px 10px",color:T.tx,fontWeight:500}}>{m.mes}</td>
                           <td style={{...cellR,color:T.txD}}>{m.anterior.toLocaleString("es-CL")}</td>
-                          <td style={{...cellR,color:T.tx,fontWeight:600}}>{m.actual.toLocaleString("es-CL")}</td>
-                          <td style={{...cellR,color:col,fontWeight:700}}>
-                            {dif>=0?"+":""}{dif.toLocaleString("es-CL")}
-                            {m.anterior>0&&<div style={{fontSize:9,fontWeight:600}}>{fmtPct(m.var_pct)}</div>}
+                          <td style={{...cellR,color:sinDato?T.txD:T.tx,fontWeight:600}}>{sinDato?"—":m.actual.toLocaleString("es-CL")}</td>
+                          <td style={{...cellR,color:sinDato?T.txD:col,fontWeight:700}}>
+                            {sinDato?"—":<>
+                              {dif>=0?"+":""}{dif.toLocaleString("es-CL")}
+                              {m.anterior>0&&<div style={{fontSize:9,fontWeight:600}}>{fmtPct(m.var_pct)}</div>}
+                            </>}
                           </td>
                         </tr>
                       );
@@ -195,7 +203,7 @@ export default function OperacionesView({ C, T }) {
                   </tbody>
                   <tfoot>
                     <tr style={{borderTop:`2px solid ${T.border}`}}>
-                      <td style={{padding:"8px 10px",color:T.tx,fontWeight:800}}>Total</td>
+                      <td style={{padding:"8px 10px",color:T.tx,fontWeight:800}}>Total<div style={{fontSize:9,color:T.txD,fontWeight:600}}>{rango}</div></td>
                       <td style={{...cellR,color:T.tx,fontWeight:700,fontSize:12}}>{totAnterior.toLocaleString("es-CL")}</td>
                       <td style={{...cellR,color:T.tx,fontWeight:800,fontSize:12}}>{totActual.toLocaleString("es-CL")}</td>
                       <td style={{...cellR,color:totDif>=0?T.green:T.red,fontWeight:800,fontSize:12}}>
