@@ -160,12 +160,51 @@ export default function OperacionesView({ C, T }) {
             </ResponsiveContainer>
           ):<p style={{fontSize:12,color:T.txM}}>Sin datos</p>}
           {(()=>{
-            const m=(C.viajesPorMesComparado||[])[C.curMonth];
-            if(!m||(m.actual===0&&m.anterior===0))return null;
+            const filas=(C.viajesPorMesComparado||[]).filter(m=>m.actual>0||m.anterior>0);
+            if(filas.length===0)return null;
+            const totActual=filas.reduce((s,m)=>s+m.actual,0);
+            const totAnterior=filas.reduce((s,m)=>s+m.anterior,0);
+            const totDif=totActual-totAnterior;
+            const totPct=totAnterior>0?pctChange(totActual,totAnterior):0;
+            const cellR={padding:"6px 10px",textAlign:"right",fontSize:11};
             return (
-              <div style={{marginTop:8,padding:"8px 10px",background:T.bg3+"44",borderRadius:6,fontSize:10,color:T.txM,lineHeight:1.4}}>
-                <strong style={{color:T.tx}}>{MESES[C.curMonth]}:</strong> {m.actual.toLocaleString("es-CL")} viajes en {C.curYear} vs {m.anterior.toLocaleString("es-CL")} en {C.prevYear}
-                {m.anterior>0&&<> · <span style={{color:m.var_pct>=0?T.green:T.red,fontWeight:600}}>{fmtPct(m.var_pct)}</span></>}
+              <div style={{overflowX:"auto",marginTop:12}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr>
+                    <th style={{padding:"8px 10px",textAlign:"left",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11}}>Mes</th>
+                    <th style={{padding:"8px 10px",textAlign:"right",color:T.txD,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11}}>{C.prevYear}</th>
+                    <th style={{padding:"8px 10px",textAlign:"right",color:T.purple,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11}}>{C.curYear}</th>
+                    <th style={{padding:"8px 10px",textAlign:"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11}}>Diferencia</th>
+                  </tr></thead>
+                  <tbody>
+                    {filas.map((m,i)=>{
+                      const dif=m.actual-m.anterior;
+                      const col=dif>=0?T.green:T.red;
+                      return(
+                        <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                          <td style={{padding:"6px 10px",color:T.tx,fontWeight:500}}>{m.mes}</td>
+                          <td style={{...cellR,color:T.txD}}>{m.anterior.toLocaleString("es-CL")}</td>
+                          <td style={{...cellR,color:T.tx,fontWeight:600}}>{m.actual.toLocaleString("es-CL")}</td>
+                          <td style={{...cellR,color:col,fontWeight:700}}>
+                            {dif>=0?"+":""}{dif.toLocaleString("es-CL")}
+                            {m.anterior>0&&<div style={{fontSize:9,fontWeight:600}}>{fmtPct(m.var_pct)}</div>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{borderTop:`2px solid ${T.border}`}}>
+                      <td style={{padding:"8px 10px",color:T.tx,fontWeight:800}}>Total</td>
+                      <td style={{...cellR,color:T.tx,fontWeight:700,fontSize:12}}>{totAnterior.toLocaleString("es-CL")}</td>
+                      <td style={{...cellR,color:T.tx,fontWeight:800,fontSize:12}}>{totActual.toLocaleString("es-CL")}</td>
+                      <td style={{...cellR,color:totDif>=0?T.green:T.red,fontWeight:800,fontSize:12}}>
+                        {totDif>=0?"+":""}{totDif.toLocaleString("es-CL")}
+                        {totAnterior>0&&<div style={{fontSize:9,fontWeight:700}}>{fmtPct(totPct)}</div>}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             );
           })()}
