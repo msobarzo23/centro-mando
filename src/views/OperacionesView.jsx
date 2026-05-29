@@ -1,6 +1,6 @@
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, PieChart, Pie, Cell,
+  CartesianGrid, Legend,
 } from "recharts";
 import { useState } from "react";
 import {
@@ -145,20 +145,30 @@ export default function OperacionesView({ C, T }) {
           </div>
         </SectionCard>
 
-        <SectionCard title="Viajes por tipo de equipo" icon={Truck} T={T} color={T.purple}>
-          {C.viajesPorEquipo?.length>0?(
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={C.viajesPorEquipo} dataKey="count" cx="50%" cy="50%" outerRadius={75} innerRadius={35} paddingAngle={2} label={({count})=>`${count}`} labelLine={{stroke:T.txD}}>
-                  {C.viajesPorEquipo.map((_,i)=><Cell key={i} fill={T.chart[i%T.chart.length]}/>)}
-                </Pie>
+        <SectionCard title={`Viajes por mes — ${C.prevYear} vs ${C.curYear}`} icon={BarChart3} T={T} color={T.purple}>
+          {(C.viajesPorMesComparado||[]).some(m=>m.actual>0||m.anterior>0)?(
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={C.viajesPorMesComparado}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+                <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} width={40}/>
                 <Tooltip content={<ChartTooltip T={T} prefix="#"/>}/>
-              </PieChart>
+                <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
+                <Bar dataKey="anterior" fill={T.txD} opacity={0.45} radius={[3,3,0,0]} name={String(C.prevYear)}/>
+                <Bar dataKey="actual" fill={T.purple} radius={[3,3,0,0]} name={String(C.curYear)}/>
+              </BarChart>
             </ResponsiveContainer>
           ):<p style={{fontSize:12,color:T.txM}}>Sin datos</p>}
-          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6,justifyContent:"center"}}>
-            {(C.viajesPorEquipo||[]).slice(0,6).map((d,i)=>(<span key={i} style={{fontSize:9,color:T.txM,display:"flex",alignItems:"center",gap:3}}><span style={{width:7,height:7,borderRadius:2,background:T.chart[i%T.chart.length]}}/>{d.name}</span>))}
-          </div>
+          {(()=>{
+            const m=(C.viajesPorMesComparado||[])[C.curMonth];
+            if(!m||(m.actual===0&&m.anterior===0))return null;
+            return (
+              <div style={{marginTop:8,padding:"8px 10px",background:T.bg3+"44",borderRadius:6,fontSize:10,color:T.txM,lineHeight:1.4}}>
+                <strong style={{color:T.tx}}>{MESES[C.curMonth]}:</strong> {m.actual.toLocaleString("es-CL")} viajes en {C.curYear} vs {m.anterior.toLocaleString("es-CL")} en {C.prevYear}
+                {m.anterior>0&&<> · <span style={{color:m.var_pct>=0?T.green:T.red,fontWeight:600}}>{fmtPct(m.var_pct)}</span></>}
+              </div>
+            );
+          })()}
         </SectionCard>
       </div>
 
