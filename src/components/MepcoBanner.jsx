@@ -41,7 +41,7 @@ export default function MepcoBanner({ T, year, lastMonth, compact = false, proje
             <div>• <b>Datos reales</b>: las facturas desde mayo ya vienen con tarifa nueva — no se modifican.</div>
             <div>• <b>Proyección estacional</b>: aplica uplift ponderado por mix de clientes a meses ≥ mayo no facturados.</div>
             <div>• <b>KPI Impacto MEPCO</b>: calcula el monto atribuible al reajuste por cada factura post-mayo (neto × pct/(1+pct)).</div>
-            <div>• <b>Casos especiales</b>: DYNO Nobel, MAXAM Nacional y Orica con transición mes a mes; SQM por reembolso de diferencia diésel (no es uplift).</div>
+            <div>• <b>Casos especiales</b>: DYNO Nobel, MAXAM Nacional y Orica con transición mes a mes hasta entrar a su polinomio de contrato.</div>
           </div>
         )}
       </div>

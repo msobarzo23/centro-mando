@@ -53,6 +53,12 @@ export const MEPCO_REAJUSTES_SIMPLE = {
   // (Antofagasta 18.30% × 8, Copiapó 14.68% × 6, A.Hospicio 17.26% × 1).
   // Se aplica un % único porque el dashboard cruza por RUT, no por destino.
   "96.792.430-K": { razon: "SODIMAC S.A.", pct: 0.1704, observacion: "Promedio ponderado por monto del reajuste del 26-mar-2026 (Antofagasta 18.30%, Copiapó 14.68%, A.Hospicio 17.26%)" },
+  // SQM: hasta abril 2026 iban por reembolso de diferencia diésel (sin uplift de
+  // tarifa). Desde mayo 2026 pasan a reajuste de tarifa del 16% (reemplaza al
+  // reembolso). RUTs movidos desde MEPCO_REEMBOLSO_DIESEL.
+  "93.007.000-9": { razon: "SOC. QUIMICA Y MINERA DE CHILE S.A.", pct: 0.16 },
+  "96.592.190-7": { razon: "SQM NITRATOS S.A.", pct: 0.16 },
+  "79.947.100-0": { razon: "SQM INDUSTRIAL S.A.", pct: 0.16 },
   "76.133.595-2": { razon: "SOLMAX CHILE SPA", pct: 0.30 },
   "96.593.480-4": { razon: "SUN S.A.", pct: 0.268 },
   "96.641.530-4": { razon: "TECNOTAMBORES S.A.", pct: 0.306 },
@@ -88,9 +94,9 @@ export const MEPCO_REAJUSTES_ESPECIALES = {
 
 // ─── Reembolso diésel ───────────────────────────────────────────────────────
 export const MEPCO_REEMBOLSO_DIESEL = new Set([
-  "93.007.000-9",
-  "96.592.190-7",
-  "79.947.100-0",
+  // Vacío desde mayo 2026: los 3 SQM pasaron a reajuste de tarifa del 16% y
+  // ahora viven en MEPCO_REAJUSTES_SIMPLE. Se mantiene la estructura por si a
+  // futuro vuelve a haber clientes con reembolso de diferencia diésel.
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
