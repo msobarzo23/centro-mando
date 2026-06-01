@@ -9,8 +9,9 @@ import {
 } from "../utils.js";
 import { parseHistorico, computeComparativas } from "./historico.js";
 import {
-  getReajuste, getUpliftPonderado,
+  getReajusteHistorico, getUpliftPonderado,
   MEPCO_ADJUSTMENT_MONTH, MEPCO_ADJUSTMENT_YEAR, MEPCO_TRIP_START_MONTH,
+  MEPCO_HISTORICO_CORTE_YEAR, MEPCO_HISTORICO_CORTE_MONTH, MEPCO_HISTORICO_CORTE_LABEL,
 } from "../data/mepcoReajustes.js";
 import { POZO_COPEC_TOTALES, POZO_COPEC_POR_MES, POZO_COPEC_META } from "../data/copecSobrecosto.js";
 
@@ -51,7 +52,9 @@ export function computeAll(data) {
     .slice(0,8)
     .map(([name, info]) => {
       const aplica = curYear >= MEPCO_ADJUSTMENT_YEAR && mesActualNum >= MEPCO_ADJUSTMENT_MONTH;
-      const { pct } = aplica ? getReajuste(info.rut, mesActualNum, curYear) : { pct: 0 };
+      // Histórico: el aporte MEPCO solo se atribuye dentro de la ventana de
+      // transición (≤ mayo 2026); desde junio la tarifa ya es "normal".
+      const { pct } = aplica ? getReajusteHistorico(info.rut, mesActualNum, curYear) : { pct: 0 };
       const mepcoImpact = pct > 0 ? info.total * pct / (1 + pct) : 0;
       return { name, total: info.total, rut: info.rut, sinMepco: info.total - mepcoImpact, mepcoImpact };
     });
@@ -177,18 +180,24 @@ export function computeAll(data) {
     }
   });
 
-  // ══════════ IMPACTO MEPCO (real, basado en mapa de reajustes) ══════════
-  // Para cada factura del año en curso desde mayo, calcular el aporte
-  // atribuible al reajuste: neto × pct/(1+pct). El neto facturado ya viene
-  // con tarifa nueva, así que la "contribución MEPCO" se obtiene despejando.
+  // ══════════ IMPACTO MEPCO (registro histórico de la transición) ══════════
+  // Para cada factura dentro de la ventana de transición (mayo 2026), calcular
+  // el aporte atribuible al reajuste: neto × pct/(1+pct). El neto facturado ya
+  // viene con tarifa nueva, así que la "contribución MEPCO" se obtiene despejando.
+  // Se usa getReajusteHistorico: desde junio 2026 devuelve 0, de modo que el
+  // impacto queda CONGELADO como cierre del capítulo MEPCO (ver mepcoReajustes.js).
   const mepcoActivo = curYear>=MEPCO_ADJUSTMENT_YEAR && (curYear>MEPCO_ADJUSTMENT_YEAR || curMonth+1>=MEPCO_ADJUSTMENT_MONTH);
+  // ¿ya pasamos el corte? (estamos viendo un mes posterior a la ventana)
+  const mepcoHistoricoCerrado = curYear>MEPCO_HISTORICO_CORTE_YEAR ||
+    (curYear===MEPCO_HISTORICO_CORTE_YEAR && curMonth+1>MEPCO_HISTORICO_CORTE_MONTH);
+  const mepcoCorteLabel = MEPCO_HISTORICO_CORTE_LABEL;
   let impactoMepcoMes=0, impactoMepcoAcum=0;
   if (mepcoActivo) {
     ventasRows.forEach(r => {
       if (r._date.getFullYear() !== curYear) return;
       const mes = r._date.getMonth() + 1;
       if (mes < MEPCO_ADJUSTMENT_MONTH) return;
-      const { pct } = getReajuste(r._rut, mes, curYear);
+      const { pct } = getReajusteHistorico(r._rut, mes, curYear);
       if (pct <= 0) return;
       const impacto = r._neto * pct / (1 + pct);
       impactoMepcoAcum += impacto;
@@ -431,5 +440,5 @@ export function computeAll(data) {
   const histRows=parseHistorico(data.historico);
   const comparativas=computeComparativas(histRows,now);
 
-  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
+  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
 }

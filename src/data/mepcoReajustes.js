@@ -185,3 +185,35 @@ export function getReajusteParaCliente(rut, year = MEPCO_ADJUSTMENT_YEAR) {
     pendiente: info.pendiente,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CIERRE HISTÓRICO DEL CAPÍTULO MEPCO
+// ═══════════════════════════════════════════════════════════════════════════
+// El "impacto MEPCO" (lo recuperado de clientes vía reajuste) y el "pozo"
+// (sobrecosto pagado a COPEC) se llevan como un REGISTRO HISTÓRICO de la
+// transición, no como una métrica que crece indefinidamente.
+//
+// Razón: el pozo se midió sobre la ventana de vencimientos 30-abr → 29-may
+// 2026, y el reajuste se negoció para cubrir ESE sobrecosto puntual. Desde
+// junio 2026 las tarifas ya son "lo normal" (uplift permanente en los clientes
+// fijos, o polinomio de contrato en DYNO/MAXAM/ORICA — variación automática por
+// índice de diésel, por fecha). Un cambio de tarifa de junio en adelante ya no
+// se explica por el shock MEPCO, así que dejamos de atribuirlo.
+//
+// Corte: mayo 2026. `getReajusteHistorico` devuelve pct 0 fuera de la ventana,
+// congelando el impacto acumulado y la cobertura del pozo.
+//
+// IMPORTANTE: esto SOLO aplica a la contabilización del impacto histórico.
+// NO toca la proyección, que sigue usando `getReajuste`/`getUpliftPonderado`
+// para meses futuros (las tarifas siguen elevadas y hay que proyectarlas).
+export const MEPCO_HISTORICO_CORTE_YEAR = 2026;
+export const MEPCO_HISTORICO_CORTE_MONTH = 5; // mayo
+export const MEPCO_HISTORICO_CORTE_LABEL = "mayo 2026";
+
+export function getReajusteHistorico(rut, mes, year) {
+  const dentroVentana =
+    year < MEPCO_HISTORICO_CORTE_YEAR ||
+    (year === MEPCO_HISTORICO_CORTE_YEAR && mes <= MEPCO_HISTORICO_CORTE_MONTH);
+  if (!dentroVentana) return { pct: 0, tipo: "ninguno", fueraVentana: true };
+  return getReajuste(rut, mes, year);
+}

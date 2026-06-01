@@ -149,7 +149,15 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={TrendingUp} label={`Fact. proyectada ${C.curMonth<11?MESES[C.curMonth+1]:"Ene"}`} value={C.proyMesSiguientePorViajes>0?fmtM(C.proyMesSiguientePorViajes):"—"} T={T} sub={C.proyMesSiguientePorViajes>0?`Basada en viajes ${MESES[C.curMonth]} × tarifa hist.`:"Sin viajes mes actual"} color={T.teal} colorBg={T.tealBg} badge="PRÓX. MES"/>
-        <KpiCard icon={Zap} label="Impacto MEPCO mes" value={C.impactoMepcoMes>0?"+"+fmtM(C.impactoMepcoMes):"—"} T={T} sub={C.mepcoActivo?(C.impactoMepcoAcum>0?`Atribuible al reajuste · Acum. desde mayo: +${fmtM(C.impactoMepcoAcum)}`:"Sin facturación con reajuste aún"):"Pendiente (desde mayo 2026)"} color={T.amber} colorBg={T.amberBg} badge={C.mepcoActivo?"VIGENTE":"PREVIO"}/>
+        <KpiCard icon={Zap}
+          label={C.mepcoHistoricoCerrado?"Impacto MEPCO (histórico)":"Impacto MEPCO mes"}
+          value={C.mepcoHistoricoCerrado?(C.impactoMepcoAcum>0?"+"+fmtM(C.impactoMepcoAcum):"—"):(C.impactoMepcoMes>0?"+"+fmtM(C.impactoMepcoMes):"—")}
+          T={T}
+          sub={C.mepcoHistoricoCerrado
+            ? (C.impactoMepcoAcum>0?`Recuperado vía reajuste · ventana ${C.mepcoCorteLabel} (cerrado)`:"Sin facturación con reajuste en la ventana")
+            : C.mepcoActivo?(C.impactoMepcoAcum>0?`Atribuible al reajuste · Acum. desde mayo: +${fmtM(C.impactoMepcoAcum)}`:"Sin facturación con reajuste aún"):"Pendiente (desde mayo 2026)"}
+          color={T.amber} colorBg={T.amberBg}
+          badge={C.mepcoHistoricoCerrado?"CERRADO":(C.mepcoActivo?"VIGENTE":"PREVIO")}/>
         {C.pozoCombustibleAcum>0 && (() => {
           const cob = C.coberturaPozoMepco;
           const cobPct = cob !== null && cob !== undefined ? (cob*100).toFixed(0) : null;
@@ -163,7 +171,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
               T={T}
               color={T.red}
               colorBg={T.redBg}
-              badge="ACUM."
+              badge={C.mepcoHistoricoCerrado?"CERRADO":"ACUM."}
               sub={`${C.pozoCombustibleDocs} fact. · ${C.pozoCombustibleVolM3.toFixed(0)} m³ · ${cobLabel}`}
               tooltip={
                 <div>
@@ -175,7 +183,8 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
                   <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>Brecha</span><strong style={{color:cobColor}}>{C.brechaPozoMepco>0?"−":"+"}{fmtM(Math.abs(C.brechaPozoMepco))} ({cobLabel})</strong></div>
                   <div style={{fontSize:10,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
                     Baseline: $684.276/m³ s/IVA (19-Mar-2026, último día con subsidio MEPCO). Montos netos.<br/>
-                    Fuente: COPEC DETALLADO 2 — actualizado al {C.pozoCombustibleMeta?.ultimaActualizacion}.
+                    Fuente: COPEC DETALLADO 2 — actualizado al {C.pozoCombustibleMeta?.ultimaActualizacion}.<br/>
+                    {C.mepcoHistoricoCerrado && <>Registro histórico de la transición, cerrado a {C.mepcoCorteLabel}: no sigue acumulando.</>}
                   </div>
                 </div>
               }
