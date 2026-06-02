@@ -26,6 +26,14 @@ export const fetchFinCSV = (url, knownHeaders) => new Promise((resolve) => {
       for (let i = headerIdx + 1; i < rows.length; i++) {
         const row = rows[i];
         if (!row || row.every(c => !c || String(c).trim() === "")) continue;
+        // Estas pestañas apilan VARIAS tablas en una sola hoja (p. ej. la de fondos
+        // trae "SALDOS VIGENTES" y, más abajo, "HISTORIAL DE VALORES"). Solo nos
+        // interesa la primera tabla. Una fila-título que abre la siguiente sección
+        // tiene texto SOLO en la primera celda (el resto vacío) y no es un número;
+        // al detectarla cortamos, para no arrastrar filas de otras tablas que
+        // comparten columnas y se sumarían dos veces.
+        const filled = row.map((c, ci) => ({ ci, v: String(c == null ? "" : c).trim() })).filter(x => x.v !== "");
+        if (filled.length === 1 && filled[0].ci === 0 && parseNum(filled[0].v) === 0) break;
         const obj = {};
         headers.forEach((h, ci) => { if (h) obj[h] = row[ci] || ""; });
         data.push(obj);
