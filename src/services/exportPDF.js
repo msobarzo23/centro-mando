@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { pctChange } from "../utils.js";
+import { pctChange, parseDate, todayMidnight } from "../utils.js";
 
 const BLUE = [37, 99, 235];
 const GRAY_TEXT = "#64748b";
@@ -219,10 +219,9 @@ export function exportFullPDF(C) {
 
   const y5 = doc.lastAutoTable.finalY + 8;
   sectionTitle(doc, "Crédito Itaú — próximas cuotas", y5);
+  const hoyCredito = todayMidnight();
   const proxCredito = (C.creditoRows || [])
-    .filter(r => {
-      try { return new Date(r.fecha) >= new Date() && r.valorCuota > 0; } catch { return false; }
-    })
+    .filter(r => { const fd = parseDate(r.fecha); return fd && fd >= hoyCredito && r.valorCuota > 0; })
     .slice(0, 8);
   autoTable(doc, {
     ...TABLE_STYLES,
