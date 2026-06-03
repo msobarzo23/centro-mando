@@ -63,7 +63,7 @@ function ResultCard({ T, label, ufVal, clpVal, color, colorBg, icon: Icon, big, 
 export default function SimulacionLeasingView({ T }) {
   const { data: ind } = useIndicadores();
 
-  const [tractos, setTractos] = useState("1");
+  const [tractos, setTractos] = useState("50");
   const [valorUSD, setValorUSD] = useState("160000");
   const [pie, setPie] = useState("50");
   const [plazo, setPlazo] = useState("36");
@@ -153,8 +153,8 @@ export default function SimulacionLeasingView({ T }) {
       <SectionCard title={`Cuota mensual estimada${r.nTractos > 1 ? ` — ${r.nTractos} tractos` : ""}`} icon={Coins} T={T} color={T.green}
         action={<span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: T.greenBg, color: T.green }}>{r.n} cuotas</span>}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <ResultCard T={T} big label="Cuota mensual neta" ufVal={r.cuotaUF} clpVal={toCLP(r.cuotaUF)} color={T.green} colorBg={T.greenBg} icon={Coins} foot={r.nTractos > 1 ? `${fmtUF(r.cuotaUF / r.nTractos)} por tracto · ${r.n} meses` : `Durante ${r.n} meses`} />
-          <ResultCard T={T} big label="Cuota mensual con IVA" ufVal={r.cuotaUF * conIVA} clpVal={toCLP(r.cuotaUF) * conIVA} color={T.red} colorBg={T.redBg} icon={Coins} foot={r.nTractos > 1 ? `${fmtUF((r.cuotaUF / r.nTractos) * conIVA)} por tracto` : "Lo que efectivamente se paga"} />
+          <ResultCard T={T} big label="Cuota mensual neta" ufVal={r.cuotaUF} clpVal={toCLP(r.cuotaUF)} color={T.green} colorBg={T.greenBg} icon={Coins} foot={r.nTractos > 1 ? `Total por ${r.nTractos} tractos · ${r.n} meses` : `Durante ${r.n} meses`} />
+          <ResultCard T={T} big label="Cuota mensual con IVA" ufVal={r.cuotaUF * conIVA} clpVal={toCLP(r.cuotaUF) * conIVA} color={T.red} colorBg={T.redBg} icon={Coins} foot={r.nTractos > 1 ? `Total por ${r.nTractos} tractos` : "Lo que efectivamente se paga"} />
           <ResultCard T={T} label="Pie inicial (neto)" ufVal={r.pieUF} clpVal={toCLP(r.pieUF)} color={T.amber} colorBg={T.amberBg} icon={Banknote} foot="Se paga a la firma" />
           <ResultCard T={T} label="Opción de compra (neto)" ufVal={r.opcionUF} clpVal={toCLP(r.opcionUF)} color={T.purple} colorBg={T.purpleBg} icon={Truck} foot="Al final del contrato" />
         </div>
@@ -170,6 +170,7 @@ export default function SimulacionLeasingView({ T }) {
                 [`Valor total (${r.nTractos} tracto${r.nTractos !== 1 ? "s" : ""})`, fmtFull(r.valorTotalCLP), fmtUF(r.valorUF)],
                 [`Pie (${(r.piePct * 100).toLocaleString("es-CL", { maximumFractionDigits: 1 })}%)`, fmtFull(toCLP(r.pieUF)), fmtUF(r.pieUF)],
                 ["Monto a financiar", fmtFull(toCLP(r.financiadoUF)), fmtUF(r.financiadoUF)],
+                ...(r.nTractos > 1 ? [["Cuota mensual por tracto (neta)", fmtFull(toCLP(r.cuotaUF / r.nTractos)), fmtUF(r.cuotaUF / r.nTractos)]] : []),
                 ["N° de cuotas", `${r.n} meses`, ""],
                 ["Tasa de interés", `${num(tasaMes).toLocaleString("es-CL", { maximumFractionDigits: 4 })}% mensual`, `≈ ${r.tasaAnual.toLocaleString("es-CL", { maximumFractionDigits: 2 })}% anual`],
               ].map((row, i) => (
