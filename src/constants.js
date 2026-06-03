@@ -1,5 +1,5 @@
 import {
-  Activity, DollarSign, Truck, Banknote, CreditCard, AlertTriangle, Eye,
+  Activity, DollarSign, Truck, Banknote, CreditCard, AlertTriangle, Eye, Calculator,
 } from "lucide-react";
 
 export const CSV = {
@@ -65,6 +65,7 @@ export const TABS = [
   {id:"operaciones",label:"Operaciones",icon:Truck},
   {id:"finanzas",label:"Finanzas",icon:Banknote},
   {id:"leasing",label:"Leasing",icon:Truck},
+  {id:"simleasing",label:"Simulación",icon:Calculator},
   {id:"credito",label:"Crédito",icon:CreditCard},
   {id:"alertas",label:"Alertas",icon:AlertTriangle},
 ];
