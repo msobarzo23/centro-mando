@@ -25,7 +25,7 @@ export default function LeasingView({ C, T }) {
         <KpiCard icon={Truck} label="Contratos activos" value={String(C.leasingContratosActivos)} T={T} sub={`${C.leasingTractosTotal} tractos en total`} color={T.accent} colorBg={T.accentBg}/>
         <KpiCard icon={DollarSign} label="Cuota mensual s/IVA" value={fmtM(C.leasingTotalCuotaSinIVA)} T={T} sub={`${(C.leasingTotalUF||0).toLocaleString("es-CL",{maximumFractionDigits:0})} UF`} color={T.amber} colorBg={T.amberBg}/>
         <KpiCard icon={DollarSign} label="Cuota mensual c/IVA" value={fmtM(C.leasingTotalCuotaIVA)} T={T} color={T.red} colorBg={T.redBg}/>
-        <KpiCard icon={Banknote} label="Deuda pendiente" value={fmtM(C.leasingDeudaTotal)} T={T} color={T.red} colorBg={T.redBg}/>
+        <KpiCard icon={Banknote} label="Deuda pendiente" value={fmtM(C.leasingDeudaTotal)} T={T} sub={`${(C.leasingDeudaTotalUF||0).toLocaleString("es-CL",{maximumFractionDigits:0})} UF · al día de hoy`} color={T.red} colorBg={T.redBg}/>
       </div>
 
       <SectionCard title="Distribución de cuotas por día de pago" icon={Calendar} T={T} color={T.accent}>
@@ -103,8 +103,8 @@ export default function LeasingView({ C, T }) {
                   <td style={{padding:"6px 10px",textAlign:"right",color:T.txM}}>{r["Dia Vcto"]||r.DiaVcto}</td>
                   <td style={{padding:"6px 10px",textAlign:"right",color:T.txD,fontSize:11}}>{r["Fecha Inicio"]||r.FechaInicio||"—"}</td>
                   <td style={{padding:"6px 10px",textAlign:"right",color:T.txD,fontSize:11}}>{r["Fecha Fin\n(Vencimiento)"]||r["Fecha Fin (Vencimiento)"]||r["Fecha Fin"]||"—"}</td>
-                  <td style={{padding:"6px 10px",textAlign:"right",color:T.green}}>{r["Cuotas\nPagadas"]||r["Cuotas Pagadas"]||"—"}</td>
-                  <td style={{padding:"6px 10px",textAlign:"right",color:T.amber}}>{r["Cuotas Por\nPagar"]||r["Cuotas Por Pagar"]||"—"}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",color:T.green}}>{r._pagadas!=null?r._pagadas:(r["Cuotas\nPagadas"]||r["Cuotas Pagadas"]||"—")}</td>
+                  <td style={{padding:"6px 10px",textAlign:"right",color:T.amber}}>{r._porPagar!=null?r._porPagar:(r["Cuotas Por\nPagar"]||r["Cuotas Por Pagar"]||"—")}</td>
                 </tr>
               ))}
             </tbody>
