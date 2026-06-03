@@ -1,5 +1,5 @@
 import {
-  Building2, PiggyBank, Gauge, Calendar, TrendingUp, Clock, FileSpreadsheet,
+  Building2, PiggyBank, Gauge, Calendar, TrendingUp, Clock, FileSpreadsheet, Scale,
 } from "lucide-react";
 import { MESES_FULL } from "../constants.js";
 import { fmtM, fmtFull, parseDate } from "../utils.js";
@@ -15,6 +15,18 @@ export default function FinanzasView({ C, T }) {
   const tipoLabel = { trabajo:"Trabajo", inversion:"Inversión", credito:"Crédito" };
   const tipoColor = { trabajo:T.accent, inversion:T.green, credito:T.amber };
   const tipoBg = { trabajo:T.accentBg, inversion:T.greenBg, credito:T.amberBg };
+
+  // Capacidad de pago del leasing: inversión disponible (DAP Inversión + FF.MM.)
+  // menos la deuda total de leasing. El crédito Itaú NO se considera (decisión de
+  // gerencia). Responde: "si liquidáramos las inversiones hoy, ¿alcanza para pagar
+  // todo el leasing?".
+  const invDisponible = C.totalInversionReal || 0;
+  const deudaLeasing = C.leasingDeudaTotal || 0;
+  const posicionNeta = invDisponible - deudaLeasing;
+  const leasingAlcanza = posicionNeta >= 0;
+  const coberturaLeasing = deudaLeasing > 0 ? (invDisponible / deudaLeasing) * 100 : null;
+  const resColor = leasingAlcanza ? T.green : T.red;
+  const resBg = leasingAlcanza ? T.greenBg : T.redBg;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
@@ -48,6 +60,37 @@ export default function FinanzasView({ C, T }) {
         <KpiCard icon={Building2} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.green} colorBg={T.greenBg}/>
         <KpiCard icon={Calendar} label="Compromisos mes" value={fmtM(C.totalCompromisosMes)} T={T} sub={`Guardado: ${fmtM(C.totalGuardadoMes)}`} color={T.amber} colorBg={T.amberBg}/>
       </div>
+
+      <SectionCard title="¿Alcanzan las inversiones para pagar todo el leasing hoy?" icon={Scale} T={T} color={resColor}
+        action={coberturaLeasing!==null&&<span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:10,background:resBg,color:resColor,whiteSpace:"nowrap"}}>Cubre {coberturaLeasing.toLocaleString("es-CL",{maximumFractionDigits:0})}%</span>}>
+        <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"stretch",marginBottom:14}}>
+          <div style={{flex:"1 1 180px",background:T.greenBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.green}22`}}>
+            <div style={{fontSize:10,color:T.green,fontWeight:600,marginBottom:4}}>INVERSIÓN DISPONIBLE</div>
+            <div style={{fontSize:22,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>{fmtM(invDisponible)}</div>
+            <div style={{fontSize:10,color:T.txD,marginTop:4}}>DAP Inversión ({fmtM(C.totalDAPInversion)}) + FF.MM. ({fmtM(C.totalFondos)})</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800,color:T.txM,flex:"0 0 auto"}}>−</div>
+          <div style={{flex:"1 1 180px",background:T.redBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.red}22`}}>
+            <div style={{fontSize:10,color:T.red,fontWeight:600,marginBottom:4}}>DEUDA TOTAL LEASING</div>
+            <div style={{fontSize:22,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>{fmtM(deudaLeasing)}</div>
+            <div style={{fontSize:10,color:T.txD,marginTop:4}}>Saldo pendiente de todos los contratos activos</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800,color:T.txM,flex:"0 0 auto"}}>=</div>
+          <div style={{flex:"1 1 180px",background:resBg,borderRadius:10,padding:"12px 16px",border:`1.5px solid ${resColor}`}}>
+            <div style={{fontSize:10,color:resColor,fontWeight:600,marginBottom:4}}>POSICIÓN NETA</div>
+            <div style={{fontSize:22,fontWeight:800,color:resColor,letterSpacing:-0.5}}>{fmtM(posicionNeta)}</div>
+            <div style={{fontSize:10,color:resColor,fontWeight:600,marginTop:4}}>{leasingAlcanza?"✓ Alcanza y sobra":"✗ No alcanza"}</div>
+          </div>
+        </div>
+        <div style={{padding:"10px 14px",background:resBg,borderRadius:8,fontSize:12.5,color:T.tx,lineHeight:1.5,fontWeight:500,border:`1px solid ${resColor}33`}}>
+          {leasingAlcanza
+            ? <>Si se liquidaran las inversiones hoy, alcanzarían a pagar <strong>todo el leasing</strong> y sobrarían <strong style={{color:resColor}}>{fmtM(posicionNeta)}</strong>.</>
+            : <>Las inversiones de hoy <strong>no alcanzan</strong> a cubrir todo el leasing: faltarían <strong style={{color:resColor}}>{fmtM(Math.abs(posicionNeta))}</strong>{coberturaLeasing!==null&&<> (cubren el {coberturaLeasing.toLocaleString("es-CL",{maximumFractionDigits:0})}% de la deuda)</>}.</>}
+        </div>
+        <div style={{marginTop:10,fontSize:10.5,color:T.txD,lineHeight:1.5}}>
+          Inversión disponible = solo DAP de Inversión + Fondos mutuos. <strong>No</strong> incluye la caja en bancos, el DAP de trabajo ni la reserva del DAP de crédito. El crédito Itaú no se considera en este cálculo.
+        </div>
+      </SectionCard>
 
       <SectionCard title="Depósitos a plazo — desglose por tipo" icon={PiggyBank} T={T} color={T.purple}>
         <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:14}}>
