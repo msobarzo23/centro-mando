@@ -103,6 +103,35 @@ export default function OperacionesView({ C, T }) {
         <div style={{marginTop:8,fontSize:11,color:T.txD,display:"flex",alignItems:"center",gap:6}}><AlertTriangle size={12}/> La barra de operación mide cuántos tractos movieron carga en la ventana; los despachos/día son cuántos salen en promedio (un tracto en ruta de 2 días sale 1 vez pero ocupa 2).</div>
       </SectionCard>
 
+      {(C.tractosParadosLista?.length>0)&&(
+        <SectionCard title={`Tractos sin viajes — ${C.tractosParadosLista.length} parados`} icon={Truck} T={T} color={T.red}>
+          <div style={{fontSize:11,color:T.txD,marginBottom:10,lineHeight:1.4}}>
+            Tractocamiones del padrón que no iniciaron ningún viaje en los últimos {C.ventanaUtilDias||7} días, ordenados por días sin moverse. Útil para revisar mantención, carga especial pendiente o unidades realmente detenidas.
+          </div>
+          <div style={{overflowX:"auto",maxHeight:380,overflowY:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr>{["Nº","Patente","Marca","Año","Último viaje","Días sin viaje"].map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i<=3?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11,whiteSpace:"nowrap",position:"sticky",top:0,background:T.card}}>{h}</th>))}</tr></thead>
+              <tbody>
+                {C.tractosParadosLista.map((t,i)=>{
+                  const dias=t.diasSinViaje;
+                  const col=(dias==null||dias>=30)?T.red:(dias>=14?T.amber:T.txM);
+                  return(
+                    <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                      <td style={{padding:"7px 10px",color:T.txD}}>{t.numero||"—"}</td>
+                      <td style={{padding:"7px 10px",color:T.tx,fontWeight:600,whiteSpace:"nowrap"}}>{t.patente||"—"}</td>
+                      <td style={{padding:"7px 10px",color:T.txM,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.marca||"—"}</td>
+                      <td style={{padding:"7px 10px",color:T.txD}}>{t.anio||"—"}</td>
+                      <td style={{padding:"7px 10px",color:T.txM,whiteSpace:"nowrap"}}>{t.ultimoViajeLabel||"Sin registro"}</td>
+                      <td style={{padding:"7px 10px",textAlign:"right",fontWeight:700,color:col,whiteSpace:"nowrap"}}>{dias==null?"Nunca":`${dias} días`}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </SectionCard>
+      )}
+
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
         <SectionCard title="Viajes por mes — con proyección de cierre" icon={BarChart3} T={T} color={T.green} action={
           <div style={{display:"flex",gap:4}}>
