@@ -311,27 +311,75 @@ export function computeAll(data) {
   const equipoMap={};viajesMesActual.forEach(r=>{const e=r._equipo||"Sin tipo";equipoMap[e]=(equipoMap[e]||0)+1;});
   const viajesPorEquipo=Object.entries(equipoMap).sort((a,b)=>b[1]-a[1]).map(([name,count])=>({name:name.length>25?name.slice(0,22)+"...":name,count}));
 
+  // ══════════ PROYECCIÓN DE CIERRE POR VIAJES (ritmo reciente) ══════════
+  // Antes mezclábamos un prorrateo simple con el patrón estacional del año pasado,
+  // dándole mucho peso a este último. Eso arrastraba la proyección hacia abajo
+  // cuando la demanda reciente venía fuerte (caso jun-2026). El método nuevo:
+  //  1) NO usa el último día con datos para medir el ritmo: casi siempre está EN
+  //     CURSO (aún no termina), así que dividir por él subestima. Solo sumamos lo
+  //     que ese día ya lleva.
+  //  2) Proyecta cada día que falta según el ritmo de las últimas semanas, pero
+  //     diferenciando por día de semana (un sábado rinde menos que un martes).
+  //  3) El patrón del año anterior queda solo como referencia, no mueve el número.
   const diasTotalesMes=new Date(curYear,curMonth+1,0).getDate();
   const diasTranscurridosMes=dayOfMonth;
-  const pesoProrrateo=Math.min(diasTranscurridosMes/15,1);
-  const pesoEstacional=1-pesoProrrateo;
-  const proyViajesProrrateoSimple=diasTranscurridosMes>0?Math.round(viajesMesActual.length/diasTranscurridosMes*diasTotalesMes):0;
+  const dkey=(dt)=>`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+  const viajesPorDiaKey={};viajesRows.forEach(r=>{const k=dkey(r._date);viajesPorDiaKey[k]=(viajesPorDiaKey[k]||0)+1;});
+  const viajesMesPorDia={};viajesMesActual.forEach(r=>{const d=r._date.getDate();viajesMesPorDia[d]=(viajesMesPorDia[d]||0)+1;});
+
+  // Ritmo reciente plano: viajes/día de los últimos 28 días con tope en la última fecha con datos.
+  const ultimaFechaDatos=viajesMesActual.length>0?new Date(curYear,curMonth,maxDayWithData):now;
+  let viajes28=0;for(let i=0;i<28;i++){const d=new Date(ultimaFechaDatos);d.setDate(d.getDate()-i);viajes28+=viajesPorDiaKey[dkey(d)]||0;}
+  const ritmoDiaReciente=Math.round(viajes28/28);
+
+  // Norma por día de semana: 6 semanas previas al último día con datos, descartando
+  // el valor más bajo de cada día (probable feriado) para no ensuciar el promedio.
+  const normaSemana=Array(7).fill(0);
+  {
+    const muestras=Array.from({length:7},()=>[]);
+    for(let i=1;i<=42;i++){const d=new Date(ultimaFechaDatos);d.setDate(d.getDate()-i);muestras[d.getDay()].push(viajesPorDiaKey[dkey(d)]||0);}
+    for(let w=0;w<7;w++){let v=muestras[w];if(v.length>=4)v=[...v].sort((a,b)=>a-b).slice(1);normaSemana[w]=v.length?v.reduce((s,x)=>s+x,0)/v.length:ritmoDiaReciente;}
+  }
+  const hayNorma=normaSemana.some(x=>x>0);
+
+  // ¿El último día con datos está en curso? Sí si es hoy (o posterior) o si su
+  // volumen va muy por debajo de lo normal para ese día de semana (sheet a medio cargar).
+  const wUlt=ultimaFechaDatos.getDay();
+  const viajesUlt=viajesMesPorDia[maxDayWithData]||0;
+  const ultimoDiaEnCurso=viajesMesActual.length>0&&(maxDayWithData>=now.getDate()||(normaSemana[wUlt]>0&&viajesUlt<0.5*normaSemana[wUlt]));
+  const diasCompletosMes=ultimoDiaEnCurso?Math.max(0,maxDayWithData-1):maxDayWithData;
+  const viajesDiasCompletos=Object.entries(viajesMesPorDia).reduce((s,[d,c])=>s+(Number(d)<=diasCompletosMes?c:0),0);
+
+  // Proyección día a día: real en días cerrados, lo ya hecho o la norma para hoy, norma para el futuro.
+  let proyViajesDiaSemana;
+  if(hayNorma){
+    let acc=0;
+    for(let day=1;day<=diasTotalesMes;day++){
+      const w=new Date(curYear,curMonth,day).getDay();
+      const real=viajesMesPorDia[day]||0;
+      if(day<=diasCompletosMes)acc+=real;
+      else if(day===maxDayWithData&&ultimoDiaEnCurso)acc+=Math.max(real,normaSemana[w]);
+      else acc+=normaSemana[w];
+    }
+    proyViajesDiaSemana=Math.round(acc);
+  }else proyViajesDiaSemana=Math.round(ritmoDiaReciente*diasTotalesMes);
+
+  // Referencias para el tooltip (no mueven el número principal).
+  const proyViajesRunRatePlano=Math.round(ritmoDiaReciente*diasTotalesMes);
+  const proyViajesProrrateoSimple=diasCompletosMes>0?Math.round(viajesDiasCompletos/diasCompletosMes*diasTotalesMes):ritmoDiaReciente*diasTotalesMes;
   const viajesMismoMesAnioAnt=viajesRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===prevYear).length;
-  const viajesAnioAntMismoCorte=viajesRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===prevYear&&r._date.getDate()<=dayOfMonth).length;
-  const proyViajesEstacional=viajesAnioAntMismoCorte>0&&viajesMismoMesAnioAnt>0?Math.round(viajesMesActual.length*(viajesMismoMesAnioAnt/viajesAnioAntMismoCorte)):(viajesMismoMesAnioAnt>0?viajesMismoMesAnioAnt:proyViajesProrrateoSimple);
-  const proyViajesHibrido=Math.round(proyViajesProrrateoSimple*pesoProrrateo+proyViajesEstacional*pesoEstacional);
+  const viajesAnioAntMismoCorte=viajesRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===prevYear&&r._date.getDate()<=diasCompletosMes).length;
+  const proyViajesEstacional=viajesAnioAntMismoCorte>0&&viajesMismoMesAnioAnt>0?Math.round(viajesDiasCompletos*(viajesMismoMesAnioAnt/viajesAnioAntMismoCorte)):(viajesMismoMesAnioAnt>0?viajesMismoMesAnioAnt:proyViajesProrrateoSimple);
+
+  const proyViajesHibrido=Math.max(proyViajesDiaSemana,viajesMesActual.length);
   const viajesProyectadosFaltantes=Math.max(0,proyViajesHibrido-viajesMesActual.length);
 
   const topClientesViajesProy=(Object.entries(vClienteMap).sort((a,b)=>b[1]-a[1]).slice(0,8)).map(([name,count])=>{
-    const clienteViajesAnioAnt=viajesRows.filter(r=>r._cliente===name&&r._date.getMonth()===curMonth&&r._date.getFullYear()===prevYear).length;
-    const clienteViajesAnioAntCorte=viajesRows.filter(r=>r._cliente===name&&r._date.getMonth()===curMonth&&r._date.getFullYear()===prevYear&&r._date.getDate()<=dayOfMonth).length;
+    // Mismo principio por cliente: proyectamos con el ritmo de sus días YA cerrados,
+    // sin contaminar con el día en curso ni con el patrón del año pasado.
+    const clienteViajesDiasCompletos=viajesMesActual.filter(r=>r._cliente===name&&r._date.getDate()<=diasCompletosMes).length;
     const clienteViajesMesAnt=viajesRows.filter(r=>r._cliente===name&&r._date.getMonth()===(curMonth===0?11:curMonth-1)&&r._date.getFullYear()===(curMonth===0?curYear-1:curYear)).length;
-    const proyProrrateoCliente=diasTranscurridosMes>0?Math.round(count/diasTranscurridosMes*diasTotalesMes):count;
-    let proyEstacionalCliente;
-    if(clienteViajesAnioAntCorte>0&&clienteViajesAnioAnt>0)proyEstacionalCliente=Math.round(count*(clienteViajesAnioAnt/clienteViajesAnioAntCorte));
-    else if(clienteViajesAnioAnt>0)proyEstacionalCliente=clienteViajesAnioAnt;
-    else proyEstacionalCliente=proyProrrateoCliente;
-    const proyCierreCliente=Math.round(proyProrrateoCliente*pesoProrrateo+proyEstacionalCliente*pesoEstacional);
+    const proyCierreCliente=diasCompletosMes>0?Math.round(clienteViajesDiasCompletos/diasCompletosMes*diasTotalesMes):count;
     const avancePct=proyCierreCliente>0?(count/proyCierreCliente)*100:100;
     return{name,count,proyCierre:Math.max(proyCierreCliente,count),avancePct:Math.min(avancePct,100),mesAnt:clienteViajesMesAnt};
   });
@@ -355,7 +403,11 @@ export function computeAll(data) {
   const totalTractocamiones=(data.flotaEquipos||[]).filter(r=>{const t=(r.tipoequipo||r.TipoEquipo||"").toUpperCase();return t.includes("TRACTOCAMION");}).length;
   const tripsByDate={};flotaRows.forEach(r=>{if(r._date.getFullYear()===curYear){const key=r._date.toISOString().slice(0,10);tripsByDate[key]=(tripsByDate[key]||0)+1;}});
   const sortedDates=Object.entries(tripsByDate).sort((a,b)=>b[0].localeCompare(a[0]));
-  const lastFullDayEntry=sortedDates.find(([_,cnt])=>cnt>=50);
+  // "Último día completo": el día de hoy casi nunca está cerrado (sigue en curso),
+  // así que no debe contar como completo aunque ya tenga registros. Tomamos el día
+  // más reciente con volumen normal (>=50) que sea ANTERIOR a hoy.
+  const hoyKey=dkey(now);
+  const lastFullDayEntry=sortedDates.find(([d,cnt])=>cnt>=50&&d<hoyKey)||sortedDates.find(([_,cnt])=>cnt>=50);
   const lastFullDay=lastFullDayEntry?lastFullDayEntry[0]:null;
   const lastFullDayDate=lastFullDay?new Date(lastFullDay+"T12:00:00"):null;
   const lastFullDayLabel=lastFullDayDate?lastFullDayDate.toLocaleDateString("es-CL",{day:"2-digit",month:"short"}):"—";
@@ -509,5 +561,5 @@ export function computeAll(data) {
   const histRows=parseHistorico(data.historico);
   const comparativas=computeComparativas(histRows,now);
 
-  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
+  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
 }

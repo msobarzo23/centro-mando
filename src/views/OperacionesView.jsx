@@ -18,7 +18,10 @@ import ContadorSinAccidentes from "../components/ContadorSinAccidentes.jsx";
 export default function OperacionesView({ C, T }) {
   const [monthRange, setMonthRange] = useState(12);
   const [searchCliente, setSearchCliente] = useState("");
-  const varViajes = C.viajesMesAnteriorCount>0 ? pctChange(C.viajesMesActual,C.viajesMesAnteriorCount) : 0;
+  // Comparar el mes-a-la-fecha (parcial) contra el mes anterior COMPLETO no tiene
+  // sentido (siempre da un -% alarmante). Comparamos la proyección de cierre vs el
+  // total del mes anterior, que es la lectura útil de "¿venimos mejor o peor?".
+  const varProyVsAnt = C.viajesMesAnteriorCount>0 ? pctChange(C.proyViajesHibrido,C.viajesMesAnteriorCount) : 0;
   const varCorte = C.viajesCorteAnterior>0 ? pctChange(C.viajesCorteActual,C.viajesCorteAnterior) : 0;
 
   const viajesChartAll = (C.viajesPorMes||[]).map((m,i)=>({
@@ -44,22 +47,24 @@ export default function OperacionesView({ C, T }) {
       </div>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-        <KpiCard icon={Truck} label="Viajes mes completo" value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={varViajes!==0?fmtPct(varViajes)+" vs mes anterior":undefined} color={T.green} colorBg={T.greenBg}/>
+        <KpiCard icon={Truck} label={`Viajes ${MESES[C.curMonth]} (en curso)`} value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={`Proy. ${C.proyViajesHibrido?.toLocaleString("es-CL")} al cierre (${fmtPct(varProyVsAnt)} vs mes ant.)`} color={varProyVsAnt>=0?T.green:T.red} colorBg={varProyVsAnt>=0?T.greenBg:T.redBg}/>
         <KpiCard icon={Activity} label={`Corte al día ${C.dayOfMonth}`} value={C.viajesCorteActual?.toLocaleString("es-CL")} T={T} sub={`${C.viajesCorteAnterior} mes ant. (${fmtPct(varCorte)})`} color={varCorte>=0?T.green:T.red} colorBg={varCorte>=0?T.greenBg:T.redBg}/>
         <KpiCard icon={BarChart3} label={`Viajes ${C.lastFullDayLabel}`} value={C.viajesAyer?.toLocaleString("es-CL")} T={T} sub="Último día completo" color={T.accent} colorBg={T.accentBg}/>
         <KpiCard icon={MapPin} label="KM mes actual" value={C.kmMesActual?.toLocaleString("es-CL")} T={T} color={T.teal} colorBg={T.tealBg}/>
         <KpiCard
           icon={Target} label={`Proy. cierre ${MESES[C.curMonth]}`} value={C.proyViajesHibrido?.toLocaleString("es-CL")} T={T}
           sub={`Faltan ~${C.viajesProyectadosFaltantes?.toLocaleString("es-CL")} viajes al cierre`}
-          color={T.amber} colorBg={T.amberBg} badge="HÍBRIDO"
+          color={T.amber} colorBg={T.amberBg} badge="RITMO"
           tooltip={<div>
-            <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Método híbrido (prorrateo + estacional)</div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Avance del mes</span><strong>{C.diasTranscurridosMes}/{C.diasTotalesMes} días</strong></div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Prorrateo simple</span><strong>{C.proyViajesProrrateoSimple?.toLocaleString("es-CL")}</strong></div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Estacional (vs {C.prevYear})</span><strong>{C.proyViajesEstacional?.toLocaleString("es-CL")}</strong></div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>= Proyección híbrida</span><strong>{C.proyViajesHibrido?.toLocaleString("es-CL")}</strong></div>
+            <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Cierre por ritmo reciente</div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Avance del mes</span><strong>{C.diasTranscurridosMes}/{C.diasTotalesMes} días ({C.diasCompletosMes} cerrados)</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Ritmo reciente</span><strong>~{C.ritmoDiaReciente?.toLocaleString("es-CL")}/día</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Prorrateo (días cerrados)</span><strong>{C.proyViajesProrrateoSimple?.toLocaleString("es-CL")}</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Run-rate plano × mes</span><strong>{C.proyViajesRunRatePlano?.toLocaleString("es-CL")}</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Por día de semana</span><strong>{C.proyViajesDiaSemana?.toLocaleString("es-CL")}</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>= Proyección cierre</span><strong>{C.proyViajesHibrido?.toLocaleString("es-CL")}</strong></div>
             <div style={{fontSize:10,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
-              Peso del prorrateo crece linealmente del día 1 al 15. Antes del 15 pesa más el patrón estacional.
+              Proyecta cada día que falta según el ritmo de las últimas semanas, por día de semana. Excluye el día en curso (aún no termina) y refleja la demanda reciente, no el patrón de {C.prevYear}.
             </div>
           </div>}
         />
