@@ -25,9 +25,9 @@ function computeSemaforo(C) {
 
   if (C.pctOcupacionTractos > 0) {
     let s;
-    if (C.pctOcupacionTractos >= UMBRAL_OCUPACION_VERDE) s = { level:"verde", text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%` };
-    else if (C.pctOcupacionTractos >= UMBRAL_OCUPACION_AMARILLA) s = { level:"amarillo", text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%` };
-    else s = { level:"rojo", text:`Flota al ${C.pctOcupacionTractos.toFixed(0)}%` };
+    if (C.pctOcupacionTractos >= UMBRAL_OCUPACION_VERDE) s = { level:"verde", text:`Flota en operación al ${C.pctOcupacionTractos.toFixed(0)}%` };
+    else if (C.pctOcupacionTractos >= UMBRAL_OCUPACION_AMARILLA) s = { level:"amarillo", text:`Flota en operación al ${C.pctOcupacionTractos.toFixed(0)}%` };
+    else s = { level:"rojo", text:`Flota en operación al ${C.pctOcupacionTractos.toFixed(0)}%` };
     signals.push(s);
   }
 

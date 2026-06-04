@@ -412,17 +412,40 @@ export function computeAll(data) {
   const lastFullDayDate=lastFullDay?new Date(lastFullDay+"T12:00:00"):null;
   const lastFullDayLabel=lastFullDayDate?lastFullDayDate.toLocaleDateString("es-CL",{day:"2-digit",month:"short"}):"—";
   const viajesAyer=lastFullDayEntry?lastFullDayEntry[1]:0;
-  const tractosAyerSet=new Set();if(lastFullDayDate){flotaRows.forEach(r=>{if(r._date.toISOString().slice(0,10)===lastFullDay&&r._tracto&&r._tracto!==COMODIN_TRACTO)tractosAyerSet.add(r._tracto);});}
-  const tractosActivosAyer=tractosAyerSet.size;
-  const tractosMesSet=new Set();flotaMesActual.forEach(r=>{if(r._tracto&&r._tracto!==COMODIN_TRACTO)tractosMesSet.add(r._tracto);});
+  // ── Ocupación de flota ────────────────────────────────────────────────
+  // La planilla solo registra la fecha de INICIO del viaje, no su duración. Un
+  // tracto en una ruta de varios días sigue trabajando aunque no genere registro
+  // ese día, así que "tractos con viaje hoy ÷ flota" SUBESTIMA la ocupación: castiga
+  // a los que están en ruta. Medimos la utilización real con ventana móvil: % de la
+  // flota que inició ≥1 viaje en los últimos 7 días cerrados. Además contamos solo
+  // patentes que son TRACTOCAMION en el padrón (el campo Tracto a veces trae
+  // camiones/camionetas), normalizando el dígito verificador (PDGW41 ≡ PDGW41-x).
+  const normPat=(p)=>(p==null?"":String(p)).trim().toUpperCase().split("-")[0].replace(/\s+/g,"");
+  const padronTractoSet=new Set((data.flotaEquipos||[]).filter(r=>(r.tipoequipo||r.TipoEquipo||"").toUpperCase().includes("TRACTOCAMION")).map(r=>normPat(r.patente||r.Patente)).filter(Boolean));
+  const comodinNorm=normPat(COMODIN_TRACTO);
+  const flotaTractoDia={};
+  flotaRows.forEach(r=>{const t=normPat(r._tracto);if(!t||t===comodinNorm||!padronTractoSet.has(t))return;const k=dkey(r._date);if(!flotaTractoDia[k])flotaTractoDia[k]=new Set();flotaTractoDia[k].add(t);});
+
+  // Utilización: ventana móvil de 7 días cerrados terminando en el último día completo.
+  const ventanaUtilDias=7;
+  const finUtil=lastFullDayDate||new Date(now.getFullYear(),now.getMonth(),now.getDate()-1);
+  const tractosEnOperacionSet=new Set();
+  for(let i=0;i<ventanaUtilDias;i++){const d=new Date(finUtil);d.setDate(d.getDate()-i);const s=flotaTractoDia[dkey(d)];if(s)s.forEach(t=>tractosEnOperacionSet.add(t));}
+  const tractosEnOperacion=tractosEnOperacionSet.size;
+  const pctOcupacionTractos=totalTractocamiones>0?(tractosEnOperacion/totalTractocamiones)*100:0;
+  const tractosParados=Math.max(0,totalTractocamiones-tractosEnOperacion);
+
+  // Despachos por día (intensidad diaria, NO ocupación): promedio de días cerrados.
+  const tractosActivosAyer=lastFullDayDate&&flotaTractoDia[dkey(lastFullDayDate)]?flotaTractoDia[dkey(lastFullDayDate)].size:0;
+  const pctTractosAyer=totalTractocamiones>0?(tractosActivosAyer/totalTractocamiones)*100:0;
+  const despachosDiaCerrado=Object.entries(flotaTractoDia).filter(([k])=>{const dt=new Date(k+"T12:00:00");return dt.getFullYear()===curYear&&dt.getMonth()===curMonth&&dt.getDate()<now.getDate();});
+  const diasConDatosTractos=despachosDiaCerrado.length;
+  const tractosDespachadosDia=diasConDatosTractos>0?Math.round(despachosDiaCerrado.reduce((s,[,set])=>s+set.size,0)/diasConDatosTractos):0;
+  const pctDespachadosDia=totalTractocamiones>0?(tractosDespachadosDia/totalTractocamiones)*100:0;
+
+  // Tractos distintos que operaron en el mes a la fecha (padrón).
+  const tractosMesSet=new Set();Object.entries(flotaTractoDia).forEach(([k,set])=>{const dt=new Date(k+"T12:00:00");if(dt.getFullYear()===curYear&&dt.getMonth()===curMonth)set.forEach(t=>tractosMesSet.add(t));});
   const tractosUnicosMes=tractosMesSet.size;
-  const tractosPorDia={};flotaMesActual.forEach(r=>{if(r._tracto&&r._tracto!==COMODIN_TRACTO){const dayKey=r._date.getDate();if(!tractosPorDia[dayKey])tractosPorDia[dayKey]=new Set();tractosPorDia[dayKey].add(r._tracto);}});
-  const diasConDatosTractos=Object.keys(tractosPorDia).length;
-  const sumaTractosDiarios=Object.values(tractosPorDia).reduce((s,set)=>s+set.size,0);
-  const tractosActivosMes=diasConDatosTractos>0?Math.round(sumaTractosDiarios/diasConDatosTractos):0;
-  const tractosActivos=tractosActivosMes;
-  const pctOcupacionTractos=totalTractocamiones>0?(tractosActivosMes/totalTractocamiones)*100:0;
-  const pctOcupacionTractosAyer=totalTractocamiones>0?(tractosActivosAyer/totalTractocamiones)*100:0;
 
   // ══════════ FINANZAS ══════════
   // Saldo por banco: tomamos el "Saldo Final" de la fila con la FECHA más reciente
@@ -494,8 +517,7 @@ export function computeAll(data) {
   dapProximos.filter(r=>r.vencimiento<=nextWeek).forEach(r=>{alertas.push({type:"info",icon:PiggyBank,msg:`DAP ${r.banco} por ${fmtM(r.monto)} vence el ${r.vencimiento.toLocaleDateString("es-CL")}`});});
   if(viajesCorteAnterior>0&&viajesCorteActual<viajesCorteAnterior*UMBRAL_VIAJES_ALERTA){alertas.push({type:"danger",icon:TrendingDown,msg:`Viajes al día ${dayOfMonth}: ${viajesCorteActual} vs ${viajesCorteAnterior} mes anterior (${pctChange(viajesCorteActual,viajesCorteAnterior).toFixed(1)}%)`});}
   if(totalContratados>0&&pctOcupacionConductores<UMBRAL_OCUPACION_ALERTA){alertas.push({type:"warning",icon:Users,msg:`Ocupación conductores: ${pctOcupacionConductores.toFixed(1)}% — ${totalEnExpedicion} de ${totalContratados} en expedición`});}
-  if(totalTractocamiones>0&&pctOcupacionTractos<UMBRAL_OCUPACION_ALERTA){alertas.push({type:"warning",icon:Truck,msg:`Ocupación tractos prom. diario: ${pctOcupacionTractos.toFixed(1)}% — ${tractosActivosMes} de ${totalTractocamiones}`});}
-  if(totalTractocamiones>0&&pctOcupacionTractosAyer<UMBRAL_OCUPACION_ALERTA&&lastFullDay){alertas.push({type:"danger",icon:Truck,msg:`Ocupación tractos ${lastFullDayLabel}: ${pctOcupacionTractosAyer.toFixed(1)}% — ${tractosActivosAyer} de ${totalTractocamiones}`});}
+  if(totalTractocamiones>0&&pctOcupacionTractos<UMBRAL_OCUPACION_ALERTA){alertas.push({type:"warning",icon:Truck,msg:`Flota en operación (${ventanaUtilDias}d): ${pctOcupacionTractos.toFixed(1)}% — ${tractosEnOperacion} de ${totalTractocamiones}, ${tractosParados} sin viaje`});}
   if(primeraSemanaCritica){alertas.push({type:"danger",icon:AlertTriangle,msg:`Semana ${primeraSemanaCritica.label}: faltan ${fmtM(primeraSemanaCritica.falta)} por cubrir`});}
   if(coberturaRatio30!==null&&coberturaRatio30<UMBRAL_LIQUIDEZ_AMARILLA){alertas.push({type:"warning",icon:AlertTriangle,msg:`Liquidez 30d insuficiente: ${fmtM(liquidez30)} vs compromisos ${fmtM(comp30)}`});}
 
@@ -561,5 +583,5 @@ export function computeAll(data) {
   const histRows=parseHistorico(data.historico);
   const comparativas=computeComparativas(histRows,now);
 
-  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosActivos,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,tractosActivosMes,totalTractocamiones,pctOcupacionTractos,pctOcupacionTractosAyer,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
+  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
 }

@@ -80,15 +80,27 @@ export default function OperacionesView({ C, T }) {
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={Truck} label="Flota tractocamiones" value={String(C.totalTractocamiones||0)} T={T} color={T.accent} colorBg={T.accentBg}/>
-        <KpiCard icon={Truck} label={`Tractos activos ${C.lastFullDayLabel}`} value={String(C.tractosActivosAyer||0)} T={T} sub={`${C.pctOcupacionTractosAyer?.toFixed(1)}% ocupación`} color={C.pctOcupacionTractosAyer>=75?T.green:T.red} colorBg={C.pctOcupacionTractosAyer>=75?T.greenBg:T.redBg}/>
-        <KpiCard icon={Truck} label="Promedio tractos/día" value={String(C.tractosActivosMes||0)} T={T} sub={`${C.pctOcupacionTractos?.toFixed(1)}% ocupación · ${C.diasConDatosTractos||0} días · ${C.tractosUnicosMes||0} únicos`} color={C.pctOcupacionTractos>=75?T.green:T.red} colorBg={C.pctOcupacionTractos>=75?T.greenBg:T.redBg}/>
+        <KpiCard
+          icon={Truck} label={`En operación (${C.ventanaUtilDias||7} días)`} value={String(C.tractosEnOperacion||0)} T={T}
+          sub={`${C.pctOcupacionTractos?.toFixed(1)}% de la flota · ${C.tractosParados||0} sin viaje`}
+          color={C.pctOcupacionTractos>=75?T.green:T.red} colorBg={C.pctOcupacionTractos>=75?T.greenBg:T.redBg} badge="OCUPACIÓN"
+          tooltip={<div>
+            <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Ocupación real de flota</div>
+            <div style={{fontSize:11,color:T.tooltipTx,opacity:0.85,lineHeight:1.5}}>
+              % de los {C.totalTractocamiones} tractocamiones que iniciaron al menos un viaje en los últimos {C.ventanaUtilDias||7} días cerrados. Usa ventana móvil porque la planilla solo guarda la fecha de inicio: un tracto en ruta de varios días trabaja sin generar registro diario, y un conteo por día lo dejaría fuera.
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:8}}><span>En operación</span><strong>{C.tractosEnOperacion} de {C.totalTractocamiones}</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Sin viaje en {C.ventanaUtilDias||7} días</span><strong>{C.tractosParados}</strong></div>
+          </div>}
+        />
+        <KpiCard icon={Truck} label="Despachos/día (prom.)" value={String(C.tractosDespachadosDia||0)} T={T} sub={`${C.pctDespachadosDia?.toFixed(1)}% de la flota sale por día · ${C.diasConDatosTractos||0} días cerrados · ${C.tractosUnicosMes||0} distintos en el mes`} color={T.teal} colorBg={T.tealBg}/>
       </div>
 
       <SectionCard title="Ocupación de recursos" icon={Target} T={T} color={T.accent}>
-        <OccupationBar label="Conductores" activos={C.totalEnExpedicion||0} total={C.totalContratados||0} T={T}/>
-        <OccupationBar label={`Tractos — ${C.lastFullDayLabel} (último día)`} activos={C.tractosActivosAyer||0} total={C.totalTractocamiones||0} T={T}/>
-        <OccupationBar label={`Tractos — ${MESES_FULL[C.curMonth]} (promedio diario)`} activos={C.tractosActivosMes||0} total={C.totalTractocamiones||0} T={T}/>
-        <div style={{marginTop:8,fontSize:11,color:T.txD,display:"flex",alignItems:"center",gap:6}}><AlertTriangle size={12}/> Se genera alerta cuando la ocupación baja del 75%</div>
+        <OccupationBar label="Conductores en expedición" activos={C.totalEnExpedicion||0} total={C.totalContratados||0} T={T}/>
+        <OccupationBar label={`Flota en operación (últimos ${C.ventanaUtilDias||7} días)`} activos={C.tractosEnOperacion||0} total={C.totalTractocamiones||0} T={T}/>
+        <OccupationBar label={`Despachos por día — ${MESES_FULL[C.curMonth]} (promedio)`} activos={C.tractosDespachadosDia||0} total={C.totalTractocamiones||0} T={T}/>
+        <div style={{marginTop:8,fontSize:11,color:T.txD,display:"flex",alignItems:"center",gap:6}}><AlertTriangle size={12}/> La barra de operación mide cuántos tractos movieron carga en la ventana; los despachos/día son cuántos salen en promedio (un tracto en ruta de 2 días sale 1 vez pero ocupa 2).</div>
       </SectionCard>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>

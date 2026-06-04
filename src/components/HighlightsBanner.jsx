@@ -6,7 +6,7 @@ function computeHighlights(C) {
   const now = new Date();
 
   if (C.pctOcupacionTractos > 0 && C.pctOcupacionTractos < 75) {
-    items.push({ score:95, type:"danger", icon:Truck, title:"Ocupación de flota crítica", text:`Promedio ${C.pctOcupacionTractos.toFixed(1)}% (${C.tractosActivosMes} de ${C.totalTractocamiones} tractos) — meta >75%` });
+    items.push({ score:95, type:"danger", icon:Truck, title:"Ocupación de flota crítica", text:`Solo ${C.pctOcupacionTractos.toFixed(1)}% en operación (${C.tractosEnOperacion} de ${C.totalTractocamiones} tractos, últimos ${C.ventanaUtilDias||7} días) — meta >75%` });
   }
   if (C.pctOcupacionConductores > 0 && C.pctOcupacionConductores < 75) {
     items.push({ score:90, type:"danger", icon:Users, title:"Ocupación de conductores baja", text:`${C.pctOcupacionConductores.toFixed(1)}% en expedición (${C.totalEnExpedicion} de ${C.totalContratados})` });

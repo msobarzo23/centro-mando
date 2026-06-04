@@ -81,7 +81,7 @@ export function exportFullPDF(C) {
     { label: "CAJA TOTAL", value: fmtCLP(C.totalCaja), sub: "Saldo bancos" },
     { label: "VIAJES MES", value: (C.viajesMesActual || 0).toLocaleString("es-CL"), sub: `Ant: ${C.viajesMesAnteriorCount || 0}` },
     { label: "LIQUIDEZ 30D", value: C.coberturaRatio30 != null ? `${C.coberturaRatio30.toFixed(2)}x` : "—", sub: "Ratio cobertura" },
-    { label: "FLOTA", value: C.pctOcupacionTractos ? `${C.pctOcupacionTractos.toFixed(0)}%` : "—", sub: `${C.tractosActivosMes || 0}/${C.totalTractocamiones || 0} tractos` },
+    { label: "FLOTA EN OPERACIÓN", value: C.pctOcupacionTractos ? `${C.pctOcupacionTractos.toFixed(0)}%` : "—", sub: `${C.tractosEnOperacion || 0}/${C.totalTractocamiones || 0} tractos (${C.ventanaUtilDias || 7}d)` },
   ];
   const boxW = (pageW - 20) / 5;
   kpis.forEach((k, i) => {
