@@ -14,6 +14,7 @@ const FinanzasView = lazy(() => import("./views/FinanzasView.jsx"));
 const LeasingView = lazy(() => import("./views/LeasingView.jsx"));
 const SimulacionLeasingView = lazy(() => import("./views/SimulacionLeasingView.jsx"));
 const CreditoView = lazy(() => import("./views/CreditoView.jsx"));
+const SimulacionCreditoView = lazy(() => import("./views/SimulacionCreditoView.jsx"));
 const AlertasView = lazy(() => import("./views/AlertasView.jsx"));
 
 export default function App() {
@@ -225,6 +226,7 @@ export default function App() {
             {tab==="leasing"&&<LeasingView C={C} T={T}/>}
             {tab==="simleasing"&&<SimulacionLeasingView T={T}/>}
             {tab==="credito"&&<CreditoView C={C} T={T}/>}
+            {tab==="simcredito"&&<SimulacionCreditoView C={C} T={T}/>}
             {tab==="alertas"&&<AlertasView C={C} T={T}/>}
           </Suspense>
         </main>
