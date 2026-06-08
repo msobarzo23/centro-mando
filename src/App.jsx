@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from "react";
 import { RefreshCw, Sun, Moon, Menu, X, FileDown, Maximize2, Minimize2, AlertTriangle } from "lucide-react";
 import { CSV, AUTO_REFRESH_MIN, TABS, themes } from "./constants.js";
 import { fetchCSV, fetchFinCSV, fetchRawCSV, parseLeasingResumen } from "./services/fetchData.js";
@@ -29,6 +29,7 @@ export default function App() {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [timeAgo, setTimeAgo] = useState("");
   const [mobileMenu, setMobileMenu] = useState(false);
+  const bottomNavRef = useRef(null);
   const [projectionMode, setProjectionMode] = useState("seasonal");
   const [presentation, setPresentation] = useState(false);
   const [compareMode, setCompareModeRaw] = useState(() => { try { return localStorage.getItem("cm-compare") || "day"; } catch { return "day"; } });
@@ -112,6 +113,11 @@ export default function App() {
     const id = setInterval(compute, 60000);
     return () => clearInterval(id);
   }, [lastUpdate]);
+
+  useEffect(() => {
+    const el = bottomNavRef.current?.querySelector('[data-active="true"]');
+    if (el) el.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [tab]);
 
   const computed = useMemo(() => computeAll(data), [data]);
 
@@ -232,13 +238,14 @@ export default function App() {
         </main>
       </div>
 
-      <nav className="bottom-nav" style={{position:"fixed",bottom:0,left:0,right:0,background:T.bg2,borderTop:`1px solid ${T.border}`,display:"none",padding:"6px 0 env(safe-area-inset-bottom,8px)",zIndex:100}}>
-        <div style={{display:"flex",justifyContent:"space-around"}}>
-          {TABS.map(t=>{const active=tab===t.id;return(<button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"4px 8px",color:active?T.accent:T.txD,fontSize:10,fontWeight:active?600:400,position:"relative"}}><t.icon size={18}/>{t.label}{t.id==="alertas"&&activeAlerts>0&&(<span style={{position:"absolute",top:0,right:2,background:T.red,color:"#fff",fontSize:8,fontWeight:700,borderRadius:6,padding:"0 4px",lineHeight:"14px"}}>{activeAlerts}</span>)}</button>);})}
+      <nav className="bottom-nav" style={{position:"fixed",bottom:0,left:0,right:0,background:T.bg2,borderTop:`1px solid ${T.border}`,display:"none",zIndex:100}}>
+        <div ref={bottomNavRef} className="bottom-nav-scroll" style={{display:"flex",overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",padding:"6px 8px env(safe-area-inset-bottom,8px)"}}>
+          {TABS.map(t=>{const active=tab===t.id;return(<button key={t.id} data-active={active?"true":undefined} onClick={()=>setTab(t.id)} style={{flex:"0 0 auto",minWidth:62,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:active?T.accentBg:"none",borderRadius:10,border:"none",cursor:"pointer",padding:"6px 10px",color:active?T.accent:T.txD,fontSize:10,fontWeight:active?600:400,whiteSpace:"nowrap",position:"relative"}}><t.icon size={18}/>{t.label}{t.id==="alertas"&&activeAlerts>0&&(<span style={{position:"absolute",top:0,right:2,background:T.red,color:"#fff",fontSize:8,fontWeight:700,borderRadius:6,padding:"0 4px",lineHeight:"14px"}}>{activeAlerts}</span>)}</button>);})}
         </div>
+        <div className="bottom-nav-fade" style={{position:"absolute",top:0,right:0,bottom:0,width:28,pointerEvents:"none",background:`linear-gradient(to right, transparent, ${T.bg2})`}}/>
       </nav>
 
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spinning{animation:spin 1s linear infinite}@keyframes progressBar{0%{transform:scaleX(0);opacity:1}70%{transform:scaleX(0.8);opacity:1}100%{transform:scaleX(1);opacity:0}}@media(max-width:768px){.sidebar{display:none!important}.bottom-nav{display:block!important}.mobile-menu-btn{display:block!important}main{padding:14px 12px 80px!important}.pdf-btn-label{display:none}}.cm-presentation .sidebar,.cm-presentation .bottom-nav,.cm-presentation .mobile-menu-btn,.cm-presentation .mobile-nav-overlay{display:none!important}.cm-presentation main{font-size:1.1rem}.cm-presentation h1{font-size:34px!important}.cm-presentation h2{font-size:20px!important}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spinning{animation:spin 1s linear infinite}@keyframes progressBar{0%{transform:scaleX(0);opacity:1}70%{transform:scaleX(0.8);opacity:1}100%{transform:scaleX(1);opacity:0}}.bottom-nav-scroll::-webkit-scrollbar{display:none}@media(max-width:768px){.sidebar{display:none!important}.bottom-nav{display:block!important}.mobile-menu-btn{display:block!important}main{padding:14px 12px 80px!important}.pdf-btn-label{display:none}}.cm-presentation .sidebar,.cm-presentation .bottom-nav,.cm-presentation .mobile-menu-btn,.cm-presentation .mobile-nav-overlay{display:none!important}.cm-presentation main{font-size:1.1rem}.cm-presentation h1{font-size:34px!important}.cm-presentation h2{font-size:20px!important}`}</style>
     </div>
   );
 }
