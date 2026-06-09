@@ -209,10 +209,10 @@ export function exportFullPDF(C) {
   autoTable(doc, {
     ...TABLE_STYLES,
     startY: 27,
-    head: [["Emisor", "Contratos", "Tractos", "Cuota s/IVA", "Cuota c/IVA", "Deuda total"]],
+    head: [["Emisor", "Contratos", "Operaciones", "Cuota s/IVA", "Cuota c/IVA", "Deuda total"]],
     body: [
-      ...(C.leasingEmisores || []).map(e => [e.emisor, e.contratos, e.tractos, fmtCLP(e.cuotaCLP), fmtCLP(e.cuotaIVA), fmtCLP(e.deudaCLP)]),
-      ["TOTAL", C.leasingContratosActivos, C.leasingTractosTotal, fmtCLP(C.leasingTotalCuotaSinIVA), fmtCLP(C.leasingTotalCuotaIVA), fmtCLP(C.leasingDeudaTotal)],
+      ...(C.leasingEmisores || []).map(e => [e.emisor, e.contratos, e.operaciones, fmtCLP(e.cuotaCLP), fmtCLP(e.cuotaIVA), fmtCLP(e.deudaCLP)]),
+      ["TOTAL", C.leasingContratosActivos, C.leasingOperaciones, fmtCLP(C.leasingTotalCuotaSinIVA), fmtCLP(C.leasingTotalCuotaIVA), fmtCLP(C.leasingDeudaTotal)],
     ],
     columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" } },
   });

@@ -192,7 +192,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
           );
         })()}
         <KpiCard icon={BarChart3} label="Margen estimado mes" value={fmtM(C.margenMesEstimado)} T={T} sub={`Fact. ${fmtM(C.totalMesActual)} − costos fijos`} color={C.margenMesEstimado>=0?T.green:T.red} colorBg={C.margenMesEstimado>=0?T.greenBg:T.redBg}/>
-        <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA)+" c/IVA"} T={T} sub={`${C.leasingContratosActivos} contratos · ${C.leasingTractosTotal} tractos`} color={T.violet} colorBg={T.violetBg}/>
+        <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA)+" c/IVA"} T={T} sub={`${C.leasingContratosActivos} contratos · ${C.leasingOperaciones} operaciones`} color={T.violet} colorBg={T.violetBg}/>
         <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoDeudaTotal)} T={T} sub={C.creditoProxima?`Próxima: ${fmtM(C.creditoProxima.valorCuota)} · cuota #${C.creditoProxima.cuota}`:"En gracia"} color={T.red} colorBg={T.redBg}/>
       </div>
 

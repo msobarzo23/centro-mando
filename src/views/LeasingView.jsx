@@ -22,7 +22,7 @@ export default function LeasingView({ C, T }) {
       </div>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-        <KpiCard icon={Truck} label="Contratos activos" value={String(C.leasingContratosActivos)} T={T} sub={`${C.leasingTractosTotal} tractos en total`} color={T.accent} colorBg={T.accentBg}/>
+        <KpiCard icon={Truck} label="Contratos activos" value={String(C.leasingContratosActivos)} T={T} sub={`${C.leasingOperaciones} operaciones de financiamiento`} color={T.accent} colorBg={T.accentBg}/>
         <KpiCard icon={DollarSign} label="Cuota mensual s/IVA" value={fmtM(C.leasingTotalCuotaSinIVA)} T={T} sub={`${(C.leasingTotalUF||0).toLocaleString("es-CL",{maximumFractionDigits:0})} UF`} color={T.amber} colorBg={T.amberBg}/>
         <KpiCard icon={DollarSign} label="Cuota mensual c/IVA" value={fmtM(C.leasingTotalCuotaIVA)} T={T} color={T.red} colorBg={T.redBg}/>
         <KpiCard icon={Banknote} label="Deuda pendiente" value={fmtM(C.leasingDeudaTotal)} T={T} sub={`${(C.leasingDeudaTotalUF||0).toLocaleString("es-CL",{maximumFractionDigits:0})} UF · al día de hoy`} color={T.red} colorBg={T.redBg}/>
@@ -33,12 +33,12 @@ export default function LeasingView({ C, T }) {
           <div style={{flex:"1 1 150px",background:T.accentBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.accent}22`}}>
             <div style={{fontSize:10,color:T.accent,fontWeight:600,marginBottom:4}}>DÍA 5</div>
             <div style={{fontSize:18,fontWeight:700,color:T.tx}}>{(C.cuotaDia5UF||0).toLocaleString("es-CL",{maximumFractionDigits:0})} UF</div>
-            <div style={{fontSize:11,color:T.txM,marginTop:2}}>{C.leasingDet?.filter(r=>parseNum(r["Dia Vcto"]||r.DiaVcto)===5).length||0} contratos</div>
+            <div style={{fontSize:11,color:T.txM,marginTop:2}}>{C.leasingDet?.filter(r=>parseNum(r["Dia Vcto"]||r.DiaVcto)===5).reduce((s,r)=>s+(r._tractos||0),0)||0} contratos</div>
           </div>
           <div style={{flex:"1 1 150px",background:T.amberBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.amber}22`}}>
             <div style={{fontSize:10,color:T.amber,fontWeight:600,marginBottom:4}}>DÍA 15</div>
             <div style={{fontSize:18,fontWeight:700,color:T.tx}}>{(C.cuotaDia15UF||0).toLocaleString("es-CL",{maximumFractionDigits:0})} UF</div>
-            <div style={{fontSize:11,color:T.txM,marginTop:2}}>{C.leasingDet?.filter(r=>parseNum(r["Dia Vcto"]||r.DiaVcto)===15).length||0} contratos</div>
+            <div style={{fontSize:11,color:T.txM,marginTop:2}}>{C.leasingDet?.filter(r=>parseNum(r["Dia Vcto"]||r.DiaVcto)===15).reduce((s,r)=>s+(r._tractos||0),0)||0} contratos</div>
           </div>
           <div style={{flex:"1 1 150px",background:T.redBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.red}22`}}>
             <div style={{fontSize:10,color:T.red,fontWeight:600,marginBottom:4}}>TOTAL MENSUAL</div>
@@ -49,7 +49,7 @@ export default function LeasingView({ C, T }) {
       </SectionCard>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))",gap:16}}>
-        <SectionCard title="Cartera por emisor" icon={Building2} T={T} color={T.accent}><MiniTable T={T} headers={["Emisor","Contratos","Tractos","Cuota c/IVA","Deuda"]} rows={[...(C.leasingEmisores||[]).map(e=>[e.emisor,e.contratos,e.tractos,fmtM(e.cuotaIVA),fmtM(e.deudaCLP)]),["TOTAL",C.leasingContratosActivos,C.leasingTractosTotal,fmtM(C.leasingTotalCuotaIVA),fmtM(C.leasingDeudaTotal)]]}/></SectionCard>
+        <SectionCard title="Cartera por emisor" icon={Building2} T={T} color={T.accent}><MiniTable T={T} headers={["Emisor","Contratos","Cuota c/IVA","Deuda"]} rows={[...(C.leasingEmisores||[]).map(e=>[e.emisor,e.contratos,fmtM(e.cuotaIVA),fmtM(e.deudaCLP)]),["TOTAL",C.leasingContratosActivos,fmtM(C.leasingTotalCuotaIVA),fmtM(C.leasingDeudaTotal)]]}/></SectionCard>
         <SectionCard title="Próximas cuotas a pagar" icon={Clock} T={T} color={T.amber}>
           {C.leasingProxCuotas?.length>0?(
             <MiniTable T={T} headers={["Fecha","Días","CLP c/IVA","Bancos","Estado"]} rows={C.leasingProxCuotas.map(r=>[r.fecha,r.dias,fmtM(r.cuotaIVA),r.bancos,<span key="e" style={{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:4,background:r.estado==="URGENTE"?T.redBg:T.greenBg,color:r.estado==="URGENTE"?T.red:T.green}}>{r.estado}</span>])}/>
@@ -85,7 +85,7 @@ export default function LeasingView({ C, T }) {
         ):<p style={{fontSize:12,color:T.txM,padding:8}}>Sin proyección disponible</p>}
       </SectionCard>
 
-      <SectionCard title={`Detalle de contratos activos (${leasingDetRows.length})`} icon={Truck} T={T}>
+      <SectionCard title={`Detalle por operación de financiamiento (${leasingDetRows.length})`} icon={Truck} T={T}>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>

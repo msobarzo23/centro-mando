@@ -553,19 +553,52 @@ export function computeAll(data) {
     const pagadas=total>0?Math.max(0,total-porPagar):pagadasPlan;
     return {...r,_banco:(r["Banco / Emisor"]||r.Banco||r.banco||"—").trim(),_tractos:parseNum(r["N Tractos"]||r.Tractos||r.tractos),_cuotaUF:cuotaUF,_cuotaCLP:cuotaCLP,_cuotaIVA:cuotaIVA,_diaVcto:diaVcto,_total:total,_pagadas:pagadas,_porPagar:porPagar,_deudaUF:porPagar*cuotaUF,_deudaCLP:porPagar*cuotaCLP};
   });
-  const leasingContratosActivos=leasingDet.length;
+  // Cada tracto es un contrato individual; las filas de la planilla solo los
+  // agrupan por fecha de toma. El conteo de "contratos" es el de tractos (142);
+  // las filas se exponen aparte como "operaciones" de financiamiento (13).
+  const leasingOperaciones=leasingDet.length;
   const leasingTractosTotal=leasingDet.reduce((s,r)=>s+r._tractos,0);
+  const leasingContratosActivos=leasingTractosTotal;
   const leasingTotalUF=leasingDet.reduce((s,r)=>s+r._cuotaUF,0);
   const leasingTotalCuotaSinIVA=leasingDet.reduce((s,r)=>s+r._cuotaCLP,0);
   const leasingTotalCuotaIVA=leasingDet.reduce((s,r)=>s+r._cuotaIVA,0);
   const leasingDeudaTotalUF=leasingDet.reduce((s,r)=>s+r._deudaUF,0);
   const leasingDeudaTotal=leasingDet.reduce((s,r)=>s+r._deudaCLP,0);
   // Cartera por emisor, reconstruida desde el detalle (con la deuda ya recalculada).
+  // contratos = tractos (cada tracto es un contrato); operaciones = filas/grupos.
   const leasingEmisorMap={};
-  leasingDet.forEach(r=>{const k=r._banco||"—";if(!leasingEmisorMap[k])leasingEmisorMap[k]={emisor:k,contratos:0,tractos:0,cuotaUF:0,cuotaCLP:0,cuotaIVA:0,deudaUF:0,deudaCLP:0};const e=leasingEmisorMap[k];e.contratos+=1;e.tractos+=r._tractos;e.cuotaUF+=r._cuotaUF;e.cuotaCLP+=r._cuotaCLP;e.cuotaIVA+=r._cuotaIVA;e.deudaUF+=r._deudaUF;e.deudaCLP+=r._deudaCLP;});
+  leasingDet.forEach(r=>{const k=r._banco||"—";if(!leasingEmisorMap[k])leasingEmisorMap[k]={emisor:k,operaciones:0,contratos:0,tractos:0,cuotaUF:0,cuotaCLP:0,cuotaIVA:0,deudaUF:0,deudaCLP:0};const e=leasingEmisorMap[k];e.operaciones+=1;e.contratos+=r._tractos;e.tractos+=r._tractos;e.cuotaUF+=r._cuotaUF;e.cuotaCLP+=r._cuotaCLP;e.cuotaIVA+=r._cuotaIVA;e.deudaUF+=r._deudaUF;e.deudaCLP+=r._deudaCLP;});
   const leasingEmisores=Object.values(leasingEmisorMap).sort((a,b)=>b.deudaCLP-a.deudaCLP);
   const lrParsed=data.leasingResumen||{emisores:[],totalRow:null,proxCuotas:[],proyeccion:[],refs:{}};
-  const leasingProxCuotas=lrParsed.proxCuotas;const leasingProyeccion=lrParsed.proyeccion;
+  const leasingProxCuotas=lrParsed.proxCuotas;
+  // ── Proyección mensual reconstruida desde el detalle (dinámica): arranca en el
+  //    mes en curso y baja sola a medida que vencen las operaciones. Reemplaza la
+  //    tabla estática de la planilla, que arrancaba en un mes fijo y no avanzaba. ──
+  const leasingProyeccion=(()=>{
+    const conFin=leasingDet
+      .map(r=>({...r,_fechaFin:parseDate(r["Fecha Fin\n(Vencimiento)"]||r["Fecha Fin (Vencimiento)"]||r["Fecha Fin"]||r.FechaFin)}))
+      .filter(r=>r._fechaFin);
+    if(conFin.length===0) return [];
+    const ym=d=>d.getFullYear()*12+d.getMonth();
+    const startYM=curYear*12+curMonth;                       // mes en curso
+    const endYM=Math.max(...conFin.map(r=>ym(r._fechaFin)));  // último vencimiento
+    const filas=[]; let cuotaUFPrev=null;
+    for(let k=startYM;k<=endYM;k++){
+      const y=Math.floor(k/12), m=k%12;
+      const activos=conFin.filter(r=>ym(r._fechaFin)>=k);    // sigue pagando este mes
+      const cuotaUF=activos.reduce((s,r)=>s+r._cuotaUF,0);
+      const cuotaCLP=activos.reduce((s,r)=>s+r._cuotaCLP,0);
+      const cuotaIVA=activos.reduce((s,r)=>s+r._cuotaIVA,0);
+      const tractos=activos.reduce((s,r)=>s+r._tractos,0);
+      const vencenEste=conFin.filter(r=>ym(r._fechaFin)===k);
+      const porBanco={}; vencenEste.forEach(r=>{porBanco[r._banco]=(porBanco[r._banco]||0)+r._tractos;});
+      const vence=Object.entries(porBanco).map(([b,t])=>`${t} tracto${t!==1?"s":""} (${b})`).join(", ");
+      const ahorroUF=cuotaUFPrev!=null?Math.max(0,cuotaUFPrev-cuotaUF):0;
+      filas.push({mes:MESES[m],anio:y,cuotaUF,cuotaCLP,cuotaIVA,contratos:tractos,operaciones:activos.length,vence,ahorroUF,deltaUF:cuotaUFPrev!=null?cuotaUF-cuotaUFPrev:0,nota:""});
+      cuotaUFPrev=cuotaUF;
+    }
+    return filas;
+  })();
   const dia5=leasingDet.filter(r=>r._diaVcto===5);const dia15=leasingDet.filter(r=>r._diaVcto===15);
   const cuotaDia5UF=dia5.reduce((s,r)=>s+r._cuotaUF,0);const cuotaDia15UF=dia15.reduce((s,r)=>s+r._cuotaUF,0);
   leasingProxCuotas.filter(r=>r.dias<=5&&r.dias>=0).forEach(r=>{alertas.push({type:"warning",icon:Truck,msg:`Leasing: cuota de ${fmtM(r.cuotaIVA)} c/IVA vence en ${r.dias} día${r.dias!==1?"s":""}`});});
@@ -595,5 +628,5 @@ export function computeAll(data) {
   const histRows=parseHistorico(data.historico);
   const comparativas=computeComparativas(histRows,now);
 
-  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
+  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes};
 }
