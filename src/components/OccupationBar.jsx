@@ -1,7 +1,8 @@
+import { occColor } from "../utils.js";
+
 export default function OccupationBar({ label, activos, total, T }) {
   const pct = total > 0 ? (activos / total) * 100 : 0;
-  const isLow = pct < 75;
-  const barColor = isLow ? T.red : pct < 85 ? T.amber : T.green;
+  const barColor = occColor(pct, T);
   return (
     <div style={{marginBottom:10}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>

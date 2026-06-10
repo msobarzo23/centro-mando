@@ -34,6 +34,12 @@ export const fetchFinCSV = (url, knownHeaders) => new Promise((resolve) => {
         // comparten columnas y se sumarían dos veces.
         const filled = row.map((c, ci) => ({ ci, v: String(c == null ? "" : c).trim() })).filter(x => x.v !== "");
         if (filled.length === 1 && filled[0].ci === 0 && parseNum(filled[0].v) === 0) break;
+        // Filas de totales ("TOTALES", "TOTALES ACTIVOS", …) NO son datos: si entran,
+        // los montos se cuentan dos veces. Hoy las neutralizan filtros aguas abajo
+        // (Vigente/fecha/Estado), pero eso es frágil — se excluyen acá en el origen.
+        // El patrón es estricto (celda exacta "TOTAL"/"TOTALES" o "TOTALES <algo>")
+        // para no comerse conceptos legítimos tipo "Total pago proveedores".
+        if (filled.some(x => /^TOTAL(ES)?$/i.test(x.v) || /^TOTALES\s/i.test(x.v))) continue;
         const obj = {};
         headers.forEach((h, ci) => { if (h) obj[h] = row[ci] || ""; });
         data.push(obj);

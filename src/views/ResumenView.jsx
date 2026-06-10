@@ -141,7 +141,7 @@ export default function ResumenView({ C, T, setTab }) {
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"3px 0",borderBottom:i<dapProx.length-1?`1px dashed ${T.border}`:"none"}}>
                     <div>
                       <div style={{color:T.tx,fontWeight:600}}>{d.banco}</div>
-                      <div style={{color:T.txD,fontSize:10}}>{d.vencimiento.toLocaleDateString("es-CL",{day:"2-digit",month:"short"})}</div>
+                      <div style={{color:T.txD,fontSize:11}}>{d.vencimiento.toLocaleDateString("es-CL",{day:"2-digit",month:"short"})}</div>
                     </div>
                     <div style={{color:T.green,fontWeight:700}}>{fmtM(d.monto)}</div>
                   </div>
@@ -160,13 +160,13 @@ export default function ResumenView({ C, T, setTab }) {
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {proxLeasing ? (
                 <div style={{fontSize:12}}>
-                  <div style={{color:T.txM,fontSize:10,fontWeight:600,marginBottom:2}}>LEASING</div>
+                  <div style={{color:T.txM,fontSize:11,fontWeight:600,marginBottom:2}}>LEASING</div>
                   <div style={{color:T.tx,fontWeight:700}}>{fmtM(proxLeasing.cuotaIVA)} <span style={{color:T.txD,fontWeight:400,fontSize:11}}>en {proxLeasing.dias}d</span></div>
                 </div>
               ) : null}
               {proxCredito ? (
                 <div style={{fontSize:12}}>
-                  <div style={{color:T.txM,fontSize:10,fontWeight:600,marginBottom:2,display:"flex",alignItems:"center",gap:4}}><CreditCard size={10}/>CRÉDITO ITAÚ</div>
+                  <div style={{color:T.txM,fontSize:11,fontWeight:600,marginBottom:2,display:"flex",alignItems:"center",gap:4}}><CreditCard size={10}/>CRÉDITO ITAÚ</div>
                   <div style={{color:T.tx,fontWeight:700}}>{fmtM(proxCredito.valorCuota)} <span style={{color:T.txD,fontWeight:400,fontSize:11}}>cuota #{proxCredito.cuota}</span></div>
                 </div>
               ) : null}

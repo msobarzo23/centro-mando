@@ -109,7 +109,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
         <div>
           <div style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:999,background:T.violetBg,border:`1px solid ${T.violet}33`,marginBottom:10}}>
             <Sparkles size={11} color={T.violet}/>
-            <span style={{fontSize:10,color:T.violet,fontWeight:700,letterSpacing:0.8,textTransform:"uppercase"}}>Resumen ejecutivo</span>
+            <span style={{fontSize:11,color:T.violet,fontWeight:700,letterSpacing:0.8,textTransform:"uppercase"}}>Resumen ejecutivo</span>
           </div>
           <h1 style={{fontSize:24,fontWeight:800,color:T.tx,marginBottom:3,letterSpacing:-0.8}}>{saludo}, Don Luis</h1>
           <p style={{fontSize:13,color:T.txM,textTransform:"capitalize"}}>{fecha}</p>
@@ -117,7 +117,16 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
         <SemaforoEjecutivo C={C} T={T}/>
       </div>
 
-      <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1} compact={true} projections={C.projections}/>
+      {(C.frescuraFuentes||[]).length>0&&(
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:11,color:T.txM,fontWeight:600}}>Datos al día:</span>
+          {C.frescuraFuentes.map((f,i)=>{
+            const col=f.dias==null?T.txD:f.dias<=1?T.green:f.dias<=3?T.amber:T.red;
+            const bg=f.dias==null?T.bg3:f.dias<=1?T.greenBg:f.dias<=3?T.amberBg:T.redBg;
+            return(<span key={i} style={{fontSize:11,fontWeight:600,color:col,background:bg,border:`1px solid ${col}33`,borderRadius:999,padding:"3px 10px"}}>{f.fuente}: {f.label}{f.dias!=null&&f.dias>1?` · hace ${f.dias} días`:""}</span>);
+          })}
+        </div>
+      )}
       <HighlightsBanner C={C} T={T}/>
       <ContadorSinAccidentes C={C} T={T} variant="hero"/>
 
@@ -138,7 +147,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
             <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>+ Fondos mutuos (rescatables)</span><strong>{fmtM(C.totalFondos)}</strong></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>= Liquidez disponible</span><strong>{fmtM(C.liquidez30)}</strong></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>÷ Compromisos 30d</span><strong>{fmtM(C.comp30)}</strong></div>
-            <div style={{fontSize:10,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
+            <div style={{fontSize:11,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
               Excluye: DAP Crédito ({fmtM(C.dapCreditoVence30||0)} en 30d) y DAP Inversión ({fmtM(C.dapInversionVence30||0)} en 30d).
               {C.colchonAdicional30>0&&<><br/>Colchón adicional (DAP Inv.): <strong>{fmtM(C.colchonAdicional30)}</strong> → ratio total {C.coberturaRatio30ConColchon?.toFixed(2)}x</>}
             </div>
@@ -149,6 +158,31 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={TrendingUp} label={`Fact. proyectada ${C.curMonth<11?MESES[C.curMonth+1]:"Ene"}`} value={C.proyMesSiguientePorViajes>0?fmtM(C.proyMesSiguientePorViajes):"—"} T={T} sub={C.proyMesSiguientePorViajes>0?`Basada en viajes ${MESES[C.curMonth]} × tarifa hist.`:"Sin viajes mes actual"} color={T.teal} colorBg={T.tealBg} badge="PRÓX. MES"/>
+        <KpiCard icon={BarChart3} label="Margen caja mes (est.)" value={fmtM(C.margenMesEstimado)} T={T}
+          sub="Fact. bruta − costos financieros"
+          color={C.margenMesEstimado>=0?T.green:T.red} colorBg={C.margenMesEstimado>=0?T.greenBg:T.redBg}
+          tooltip={<div>
+            <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Cobertura de costos fijos financieros</div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Facturación bruta mes (c/IVA)</span><strong>{fmtM(C.totalMesActualBruto)}</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>− Compromisos del mes</span><strong>{fmtM(C.totalCompromisosMes)}</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>− Cuota leasing c/IVA</span><strong>{fmtM(C.leasingMesEstimado)}</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>− Cuota crédito Itaú</span><strong>{fmtM(C.creditoMesEstimado)}</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>= Margen estimado</span><strong>{fmtM(C.margenMesEstimado)}</strong></div>
+            <div style={{fontSize:11,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4}}>No incluye combustible ni remuneraciones: mide si la facturación cubre los costos financieros fijos, no la utilidad del negocio.</div>
+          </div>}/>
+        <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA)+" c/IVA"} T={T} sub={`${C.leasingContratosActivos} contratos · ${C.leasingOperaciones} operaciones`} color={T.violet} colorBg={T.violetBg}/>
+        <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoDeudaTotal)} T={T} sub={C.creditoProxima?`Próxima: ${fmtM(C.creditoProxima.valorCuota)} · cuota #${C.creditoProxima.cuota}`:"En gracia"} color={T.red} colorBg={T.redBg}/>
+      </div>
+
+      <details className="cm-section" style={{background:T.card,borderRadius:14,padding:"12px 18px",border:`1px solid ${T.border}`}}>
+        <summary style={{cursor:"pointer",fontSize:13,fontWeight:700,color:T.tx,listStyle:"none",display:"flex",alignItems:"center",gap:8}}>
+          <Zap size={14} color={T.violet}/>
+          Capítulo MEPCO — reajuste de tarifas y pozo combustible{C.mepcoHistoricoCerrado?" (cerrado)":""}
+          <span style={{marginLeft:"auto",fontSize:11,color:T.txD}}>▼ desplegar</span>
+        </summary>
+        <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:12}}>
+        <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1} compact={true} projections={C.projections}/>
+        <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={Zap}
           label={C.mepcoHistoricoCerrado?"Impacto MEPCO (histórico)":"Impacto MEPCO mes"}
           value={C.mepcoHistoricoCerrado?(C.impactoMepcoAcum>0?"+"+fmtM(C.impactoMepcoAcum):"—"):(C.impactoMepcoMes>0?"+"+fmtM(C.impactoMepcoMes):"—")}
@@ -181,7 +215,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
                   <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700,color:T.red}}><span>= Pozo a cubrir</span><strong>{fmtM(C.pozoCombustibleAcum)}</strong></div>
                   <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Reajuste cobrado clientes (acum.)</span><strong style={{color:T.green}}>+{fmtM(C.impactoMepcoAcum||0)}</strong></div>
                   <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>Brecha</span><strong style={{color:cobColor}}>{C.brechaPozoMepco>0?"−":"+"}{fmtM(Math.abs(C.brechaPozoMepco))} ({cobLabel})</strong></div>
-                  <div style={{fontSize:10,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
+                  <div style={{fontSize:11,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
                     Baseline: $684.276/m³ s/IVA (19-Mar-2026, último día con subsidio MEPCO). Montos netos.<br/>
                     Fuente: COPEC DETALLADO 2 — actualizado al {C.pozoCombustibleMeta?.ultimaActualizacion}.<br/>
                     {C.mepcoHistoricoCerrado && <>Registro histórico de la transición, cerrado a {C.mepcoCorteLabel}: no sigue acumulando.</>}
@@ -191,10 +225,9 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
             />
           );
         })()}
-        <KpiCard icon={BarChart3} label="Margen estimado mes" value={fmtM(C.margenMesEstimado)} T={T} sub={`Fact. ${fmtM(C.totalMesActual)} − costos fijos`} color={C.margenMesEstimado>=0?T.green:T.red} colorBg={C.margenMesEstimado>=0?T.greenBg:T.redBg}/>
-        <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA)+" c/IVA"} T={T} sub={`${C.leasingContratosActivos} contratos · ${C.leasingOperaciones} operaciones`} color={T.violet} colorBg={T.violetBg}/>
-        <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoDeudaTotal)} T={T} sub={C.creditoProxima?`Próxima: ${fmtM(C.creditoProxima.valorCuota)} · cuota #${C.creditoProxima.cuota}`:"En gracia"} color={T.red} colorBg={T.redBg}/>
-      </div>
+        </div>
+        </div>
+      </details>
 
       <SectionCard
         title="Comparativa de períodos"
@@ -233,12 +266,12 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
         )}
       </SectionCard>
 
-      <SectionCard title={`Facturación mensual ${C.curYear} — con proyección estacional`} icon={BarChart3} T={T} color={T.accent} action={<span style={{fontSize:10,color:T.txD,fontStyle:"italic"}}>Proyección anual: <strong style={{color:T.amber}}>{fmtM(C.projections?.seasonal||0)}</strong></span>}>
+      <SectionCard title={`Facturación mensual ${C.curYear} — con proyección estacional`} icon={BarChart3} T={T} color={T.accent} action={<span style={{fontSize:11,color:T.txD,fontStyle:"italic"}}>Proyección anual: <strong style={{color:T.amber}}>{fmtM(C.projections?.seasonal||0)}</strong></span>}>
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
             <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
-            <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v.toFixed(0)}M`} width={55}/>
+            <YAxis tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v.toFixed(0)}M`} width={55}/>
             <Tooltip content={<ChartTooltip T={T} valuesInM extraRow={(pl)=>{
               const real = pl.find(p=>p.dataKey==="real")?.value;
               const faltante = pl.find(p=>p.dataKey==="proyectadoActual")?.value;
@@ -256,7 +289,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
             <Bar dataKey="proyectadoActual" stackId="curr" fill={T.amber} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" radius={[3,3,0,0]} name="Falta facturar mes"/>
             <Bar dataKey="proyectadoFuturo" fill={T.amber} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" radius={[3,3,0,0]} name="Proyectado estacional"/>
             <Line type="monotone" dataKey="proyViajes" stroke={T.teal} strokeWidth={2.5} dot={{fill:T.teal,r:4}} connectNulls={false} name="Proyectado por viajes"/>
-            {C.curYear===2026&&(<ReferenceLine x={MESES[MEPCO_ADJUSTMENT_MONTH-1]} stroke={T.violet} strokeDasharray="4 3" strokeWidth={2} label={{value:"⚡ MEPCO",position:"top",fill:T.violet,fontSize:10,fontWeight:700}}/>)}
+            {C.curYear===2026&&(<ReferenceLine x={MESES[MEPCO_ADJUSTMENT_MONTH-1]} stroke={T.violet} strokeDasharray="4 3" strokeWidth={2} label={{value:"⚡ MEPCO",position:"top",fill:T.violet,fontSize:11,fontWeight:700}}/>)}
           </ComposedChart>
         </ResponsiveContainer>
       </SectionCard>

@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import { useState } from "react";
 import {
-  DollarSign, TrendingUp, Target, BarChart3, Activity, Users, FileText, Zap, FileSpreadsheet, Search, Fuel,
+  DollarSign, TrendingUp, Target, BarChart3, Activity, Users, FileText, Zap, FileSpreadsheet, Search, Fuel, PieChart as PieChartIcon, Route,
 } from "lucide-react";
 import { Sparkles } from "lucide-react";
 import { MESES, MESES_FULL, MEPCO_ADJUSTMENT_MONTH } from "../constants.js";
@@ -20,6 +20,7 @@ import DashboardLink from "../components/DashboardLink.jsx";
 export default function VentasView({ C, T, projectionMode, setProjectionMode }) {
   const [monthRange, setMonthRange] = useState(12);
   const [searchCliente, setSearchCliente] = useState("");
+  const [tarifaModo, setTarifaModo] = useState("viaje"); // "viaje" | "km"
   const mesLabel = MESES_FULL[C.curMonth];
   const varMes = C.totalMesAnterior>0 ? pctChange(C.totalMesActual,C.totalMesAnterior) : 0;
   const varAno = C.ventasAnoAnterior>0 ? pctChange(C.ventasAnoActual,C.ventasAnoAnterior) : 0;
@@ -102,6 +103,17 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
       </div>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+        {C.concentracionTop2&&(
+          <KpiCard icon={PieChartIcon} label="Concentración top 2 clientes" value={`${C.concentracionTop2.pct.toFixed(0)}%`} T={T}
+            sub={C.concentracionTop2.names.map(n=>n.length>14?n.slice(0,12)+"…":n).join(" + ")}
+            color={C.concentracionTop2.pct>=60?T.red:C.concentracionTop2.pct>=40?T.amber:T.green}
+            colorBg={C.concentracionTop2.pct>=60?T.redBg:C.concentracionTop2.pct>=40?T.amberBg:T.greenBg}
+            badge="RIESGO CARTERA"
+            tooltip={<div>
+              <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Dependencia comercial</div>
+              <div style={{fontSize:11,color:T.tooltipTx,lineHeight:1.5}}>Los 2 mayores clientes ({C.concentracionTop2.names.join(" y ")}) concentran el {C.concentracionTop2.pct.toFixed(1)}% de la facturación del mes. Sobre 60% el negocio queda muy expuesto a la decisión de un solo cliente.</div>
+            </div>}/>
+        )}
         <KpiCard icon={BarChart3} label={`${mesLabel} ${C.prevYear}`} value={fmtM(mesActualAnterior?.anterior||0)} T={T} sub={varMesVsAnioAnt!==0?`${C.curYear}: ${fmtPct(varMesVsAnioAnt)}`:undefined} color={T.purple} colorBg={T.purpleBg}/>
         <KpiCard icon={Activity} label={`Acum. al corte (día ${new Date().getDate()})`} value={fmtM(C.acumCorteActual)} T={T} sub={`${C.prevYear}: ${fmtM(C.acumCorteAnterior)} (${fmtPct(varAcumCorte)})`} color={varAcumCorte>=0?T.green:T.red} colorBg={varAcumCorte>=0?T.greenBg:T.redBg}/>
         <KpiCard icon={Target} label={`Meta: superar ${C.prevYear}`} value={fmtM(C.ventasAnoAnterior)} T={T} sub={`Falta ${fmtM(Math.max(0,C.ventasAnoAnterior-C.ventasAnoActual))}`} color={T.amber} colorBg={T.amberBg}/>
@@ -130,9 +142,9 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
             const pct = C.ventasAnoAnterior>0 ? pctChange(val,C.ventasAnoAnterior) : 0;
             return(
               <div key={m.id} style={{padding:"8px 12px",borderRadius:10,background:projectionMode===m.id?`${T.amber}12`:T.bg3+"44",border:`1px solid ${projectionMode===m.id?T.amber+"55":T.border}`}}>
-                <div style={{fontSize:10,color:T.txD,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{m.label}</div>
+                <div style={{fontSize:11,color:T.txD,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{m.label}</div>
                 <div style={{fontSize:14,fontWeight:800,color:T.tx}}>{fmtM(val)}</div>
-                <div style={{fontSize:10,color:pct>=0?T.green:T.red,fontWeight:700}}>{fmtPct(pct)} vs {C.prevYear}</div>
+                <div style={{fontSize:11,color:pct>=0?T.green:T.red,fontWeight:700}}>{fmtPct(pct)} vs {C.prevYear}</div>
               </div>
             );
           })}
@@ -147,22 +159,22 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
         const isDiverge = divPct>15;
         const viajesMayor = viajes>seasonal;
         return(
-          <SectionCard title="Proyección doble — Estacional vs. Basada en viajes" icon={Sparkles} T={T} color={T.violet} action={isDiverge?<span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:999,background:T.amberBg,color:T.amber,letterSpacing:0.4}}>⚠ DIVERGENCIA {divPct.toFixed(0)}%</span>:<span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:999,background:T.greenBg,color:T.green,letterSpacing:0.4}}>✓ CONVERGEN</span>}>
+          <SectionCard title="Proyección doble — Estacional vs. Basada en viajes" icon={Sparkles} T={T} color={T.violet} action={isDiverge?<span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,background:T.amberBg,color:T.amber,letterSpacing:0.4}}>⚠ DIVERGENCIA {divPct.toFixed(0)}%</span>:<span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,background:T.greenBg,color:T.green,letterSpacing:0.4}}>✓ CONVERGEN</span>}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(230px, 1fr))",gap:12}}>
               <div style={{padding:"12px 14px",borderRadius:10,background:T.amberBg,border:`1px solid ${T.amber}33`}}>
-                <div style={{fontSize:10,color:T.amber,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>⚡ Estacional</div>
+                <div style={{fontSize:11,color:T.amber,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>⚡ Estacional</div>
                 <div style={{fontSize:20,fontWeight:800,color:T.tx}}>{fmtM(seasonal)}</div>
-                <div style={{fontSize:10,color:T.txM,marginTop:2}}>Basada en patrón histórico {C.prevYear}</div>
+                <div style={{fontSize:11,color:T.txM,marginTop:2}}>Basada en patrón histórico {C.prevYear}</div>
               </div>
               <div style={{padding:"12px 14px",borderRadius:10,background:T.tealBg,border:`1px solid ${T.teal}33`}}>
-                <div style={{fontSize:10,color:T.teal,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>🚛 Basada en viajes</div>
+                <div style={{fontSize:11,color:T.teal,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>🚛 Basada en viajes</div>
                 <div style={{fontSize:20,fontWeight:800,color:T.tx}}>{fmtM(viajes)}</div>
-                <div style={{fontSize:10,color:T.txM,marginTop:2}}>Viajes ejecutados × tarifa $/viaje por cliente</div>
+                <div style={{fontSize:11,color:T.txM,marginTop:2}}>Viajes ejecutados × tarifa $/viaje por cliente</div>
               </div>
               <div style={{padding:"12px 14px",borderRadius:10,background:isDiverge?T.redBg:T.greenBg,border:`1px solid ${isDiverge?T.red:T.green}33`}}>
-                <div style={{fontSize:10,color:isDiverge?T.red:T.green,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Δ Diferencia</div>
+                <div style={{fontSize:11,color:isDiverge?T.red:T.green,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Δ Diferencia</div>
                 <div style={{fontSize:20,fontWeight:800,color:T.tx}}>{divAbs>=0?"+":""}{fmtM(divAbs)}</div>
-                <div style={{fontSize:10,color:T.txM,marginTop:2}}>{divPct.toFixed(1)}% de gap · {viajesMayor?"viajes anticipan más":"estacional más optimista"}</div>
+                <div style={{fontSize:11,color:T.txM,marginTop:2}}>{divPct.toFixed(1)}% de gap · {viajesMayor?"viajes anticipan más":"estacional más optimista"}</div>
               </div>
             </div>
             <div style={{marginTop:12,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
@@ -174,12 +186,46 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
         );
       })()}
 
+      {(C.tarifaPorMes||[]).some(t=>t.actual!=null||t.anterior!=null)&&(()=>{
+        const esKm=tarifaModo==="km";
+        const data=C.tarifaPorMes.map(t=>({mes:t.mes,[C.curYear]:esKm?t.actualKm:t.actual,[C.prevYear]:esKm?t.anteriorKm:t.anterior}));
+        const ult=[...C.tarifaPorMes].reverse().find(t=>(esKm?t.actualKm:t.actual)!=null);
+        const fmtT=(v)=>v==null?"—":"$"+Math.round(v).toLocaleString("es-CL");
+        return(
+          <SectionCard title={`Tarifa media — ingreso por ${esKm?"kilómetro":"viaje"}`} icon={Route} T={T} color={T.teal}
+            action={
+              <div style={{display:"flex",gap:4}}>
+                {[{id:"viaje",label:"$/viaje"},{id:"km",label:"$/km"}].map(m=>(
+                  <button key={m.id} onClick={()=>setTarifaModo(m.id)} style={{padding:"3px 9px",borderRadius:7,border:`1px solid ${tarifaModo===m.id?T.teal:T.border}`,background:tarifaModo===m.id?T.tealBg:"transparent",color:tarifaModo===m.id?T.teal:T.txM,cursor:"pointer",fontSize:11,fontWeight:700}}>{m.label}</button>
+                ))}
+              </div>
+            }>
+            <ResponsiveContainer width="100%" height={220}>
+              <ComposedChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+                <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>esKm?`$${Math.round(v).toLocaleString("es-CL")}`:`$${(v/1e6).toFixed(2)}M`} width={62} domain={["auto","auto"]}/>
+                <Tooltip formatter={(v)=>fmtT(v)} contentStyle={{background:T.tooltipBg,border:`1px solid ${T.border}`,borderRadius:8,fontSize:12}} labelStyle={{color:T.tooltipTx,fontWeight:600}}/>
+                <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
+                <Line type="monotone" dataKey={String(C.prevYear)} stroke={T.txD} strokeWidth={2} strokeDasharray="5 3" dot={{r:3}} connectNulls/>
+                <Line type="monotone" dataKey={String(C.curYear)} stroke={T.teal} strokeWidth={2.5} dot={{r:4,fill:T.teal}} connectNulls/>
+              </ComposedChart>
+            </ResponsiveContainer>
+            <div style={{marginTop:10,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
+              <strong style={{color:T.tx}}>Cómo se calcula:</strong> facturación del mes ÷ {esKm?"kilómetros":"viajes"} del mes anterior (los viajes se facturan al mes siguiente). Solo meses cerrados.
+              {ult&&<> Última tarifa: <strong style={{color:T.teal}}>{fmtT(esKm?ult.actualKm:ult.actual)}</strong> ({ult.mes}).</>}
+              {" "}Si esta línea cae mientras la facturación sube, el crecimiento viene de volumen y no de precio — señal de erosión de tarifas.
+            </div>
+          </SectionCard>
+        );
+      })()}
+
       {C.desgloseMesActualProy?.length>0&&(
         <details style={{background:T.card,borderRadius:14,padding:"12px 18px",border:`1px solid ${T.border}`}}>
           <summary style={{cursor:"pointer",fontSize:13,fontWeight:700,color:T.tx,listStyle:"none",display:"flex",alignItems:"center",gap:8}}>
             <Sparkles size={14} color={T.teal}/>
             Auditoría: cálculo de proyección "{MESES[C.curMonth]}" basada en viajes de {C.curMonth>0?MESES[C.curMonth-1]:"Dic"}
-            <span style={{marginLeft:"auto",fontSize:10,color:T.txD}}>▼ desplegar</span>
+            <span style={{marginLeft:"auto",fontSize:11,color:T.txD}}>▼ desplegar</span>
           </summary>
           <div style={{marginTop:14,overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -194,7 +240,7 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
                       <td style={{padding:"7px 10px",textAlign:"right",color:T.tx}}>{d.viajes}</td>
                       <td style={{padding:"7px 10px",textAlign:"right",color:T.txM,fontFamily:"monospace",fontSize:11}}>{fmtM(d.tasa)}</td>
                       <td style={{padding:"7px 10px",textAlign:"right",color:T.tx,fontWeight:600}}>{fmtM(d.aporte)}</td>
-                      <td style={{padding:"7px 10px",textAlign:"right"}}><span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:999,background:confBg,color:confColor,textTransform:"uppercase"}}>{d.confianza}</span></td>
+                      <td style={{padding:"7px 10px",textAlign:"right"}}><span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,background:confBg,color:confColor,textTransform:"uppercase"}}>{d.confianza}</span></td>
                     </tr>
                   );
                 })}
@@ -228,7 +274,7 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
           <ComposedChart data={chartDataProj}>
             <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
             <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
-            <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v.toFixed(0)}M`} width={55}/>
+            <YAxis tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v.toFixed(0)}M`} width={55}/>
             <Tooltip content={<ChartTooltip T={T} valuesInM extraRow={(pl)=>{
               const real = pl.find(p=>p.dataKey==="real")?.value;
               const faltante = pl.find(p=>p.dataKey==="proyectadoActual")?.value;
@@ -246,7 +292,7 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
             <Bar dataKey="proyectadoActual" stackId="curr" fill={T.amber} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" radius={[3,3,0,0]} name="Falta facturar mes"/>
             <Bar dataKey="proyectadoFuturo" fill={T.amber} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" radius={[3,3,0,0]} name="Estacional"/>
             <Line type="monotone" dataKey="proyViajes" stroke={T.teal} strokeWidth={2.5} dot={{fill:T.teal,r:4}} connectNulls={false} name="Por viajes"/>
-            {C.curYear===2026&&(<ReferenceLine x={MESES[MEPCO_ADJUSTMENT_MONTH-1]} stroke={T.violet} strokeDasharray="4 3" strokeWidth={2} label={{value:"⚡ Ajuste MEPCO",position:"top",fill:T.violet,fontSize:10,fontWeight:700}}/>)}
+            {C.curYear===2026&&(<ReferenceLine x={MESES[MEPCO_ADJUSTMENT_MONTH-1]} stroke={T.violet} strokeDasharray="4 3" strokeWidth={2} label={{value:"⚡ Ajuste MEPCO",position:"top",fill:T.violet,fontSize:11,fontWeight:700}}/>)}
           </ComposedChart>
         </ResponsiveContainer>
       </SectionCard>
@@ -298,7 +344,7 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
             </PieChart>
           </ResponsiveContainer>
           <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8,justifyContent:"center"}}>
-            {pieData.map((d,i)=>(<span key={i} style={{fontSize:10,color:T.txM,display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:T.chart[i%T.chart.length]}}/>{d.name}</span>))}
+            {pieData.map((d,i)=>(<span key={i} style={{fontSize:11,color:T.txM,display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:T.chart[i%T.chart.length]}}/>{d.name}</span>))}
           </div>
         </SectionCard>
         <SectionCard title="Top clientes del mes" icon={Users} T={T} color={T.accent}>
@@ -323,7 +369,7 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
           {(C.ultimasFacturas||[]).length>0?(
             <MiniTable T={T} maxRows={5} headers={["Fecha","Folio","Cliente","Tipo","Neto"]} rows={(C.ultimasFacturas||[]).map(r=>[
               r.fecha,r.folio,r.cliente.length>20?r.cliente.slice(0,18)+"...":r.cliente,
-              <span key="tipo" style={{fontSize:9,fontWeight:600,padding:"2px 8px",borderRadius:4,background:String(r.tipo).toLowerCase().includes("credito")||String(r.tipo).toLowerCase().includes("crédito")?T.redBg:T.greenBg,color:String(r.tipo).toLowerCase().includes("credito")||String(r.tipo).toLowerCase().includes("crédito")?T.red:T.green}}>{String(r.tipo).toLowerCase().includes("credito")||String(r.tipo).toLowerCase().includes("crédito")?"NC":"FAC"}</span>,
+              <span key="tipo" style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:String(r.tipo).toLowerCase().includes("credito")||String(r.tipo).toLowerCase().includes("crédito")?T.redBg:T.greenBg,color:String(r.tipo).toLowerCase().includes("credito")||String(r.tipo).toLowerCase().includes("crédito")?T.red:T.green}}>{String(r.tipo).toLowerCase().includes("credito")||String(r.tipo).toLowerCase().includes("crédito")?"NC":"FAC"}</span>,
               <span key="neto" style={{color:r.neto<0?T.red:T.tx,fontWeight:500}}>{fmtM(r.neto)}</span>,
             ])}/>
           ):<p style={{fontSize:12,color:T.txM,padding:8}}>Sin facturas recientes</p>}

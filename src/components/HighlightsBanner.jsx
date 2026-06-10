@@ -86,7 +86,7 @@ export default function HighlightsBanner({ C, T }) {
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
         <Sparkles size={14} color={T.violet}/>
         <span style={{fontSize:12,fontWeight:700,color:T.tx,letterSpacing:0.3}}>Hoy destaca</span>
-        <span style={{fontSize:10,color:T.txD,fontStyle:"italic"}}>ordenado por relevancia</span>
+        <span style={{fontSize:11,color:T.txD,fontStyle:"italic"}}>ordenado por relevancia</span>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {highlights.map((h, i) => {

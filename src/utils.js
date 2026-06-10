@@ -34,7 +34,12 @@ export const fmtM = (n) => {
 
 export const fmtFull = (n) => "$"+Math.round(n).toLocaleString("es-CL");
 export const fmtPct = (n) => (n>=0?"+":"")+n.toFixed(1)+"%";
+// Variante con flecha: el signo no queda solo en el color (accesibilidad).
+export const fmtPctArrow = (n) => `${n>=0?"▲":"▼"} ${Math.abs(n).toFixed(1)}%`;
 export const pctChange = (cur,prev) => prev===0?(cur>0?100:0):((cur-prev)/prev)*100;
+// Color tri-estado para ocupación: bajo 60 es problema, 60-75 es atención, 75+ ok.
+export const occColor = (pct,T) => pct>=75?T.green:pct>=60?T.amber:T.red;
+export const occBg = (pct,T) => pct>=75?T.greenBg:pct>=60?T.amberBg:T.redBg;
 
 export const getSaludo = () => {
   const h = new Date().getHours();

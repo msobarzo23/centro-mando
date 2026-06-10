@@ -3,8 +3,28 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta name="theme-color" content="#1D4ED8"/>
 <title>Centro de Mando — Transportes Bello</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{-webkit-font-smoothing:antialiased}</style>
+<link rel="manifest" href="/manifest.webmanifest"/>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+<link rel="icon" type="image/png" href="/icon-192.png"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{-webkit-font-smoothing:antialiased;font-family:'Plus Jakarta Sans','SF Pro Display',system-ui,sans-serif}
+h1,h2{font-family:'DM Serif Display',Georgia,serif;letter-spacing:0!important;font-weight:400!important}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.kpi-card,.cm-section{animation:fadeInUp .5s cubic-bezier(.4,0,.2,1) both}
+.kpi-card:nth-child(1){animation-delay:0ms}
+.kpi-card:nth-child(2){animation-delay:70ms}
+.kpi-card:nth-child(3){animation-delay:140ms}
+.kpi-card:nth-child(4){animation-delay:210ms}
+.kpi-card:nth-child(5){animation-delay:280ms}
+.kpi-card:hover{box-shadow:0 4px 14px rgba(0,0,0,0.10);transition:box-shadow .3s}
+@media (prefers-reduced-motion: reduce){.kpi-card,.cm-section{animation:none}}
+</style>
 </head>
 <body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body>
 </html>

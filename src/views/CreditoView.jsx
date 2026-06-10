@@ -39,8 +39,8 @@ export default function CreditoView({ C, T }) {
         <SectionCard title="Resumen del crédito" icon={CreditCard} T={T} color={T.accent}>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {[
-              ["Monto original", fmtFull(5000000000)],
-              ["Plazo", "60 cuotas (58 meses + 2 gracia)"],
+              ["Monto original", fmtFull(C.creditoMontoOriginal||0)],
+              ["Plazo", `${C.creditoTotalCuotas} cuotas (${(C.creditoTotalCuotas||0)-(C.creditoCuotasGracia||0)} meses + ${C.creditoCuotasGracia||0} gracia)`],
               ["Cuota mensual", fmtFull(C.creditoValorCuota)],
               ["Cuotas pagadas", String(C.creditoCuotasPagadas)],
               ["Cuotas restantes", String(C.creditoCuotasPorPagar)],
@@ -66,8 +66,8 @@ export default function CreditoView({ C, T }) {
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={allCuotas.filter(r=>r.saldo>0).map(r=>({cuota:`#${r.cuota}`,saldo:r.saldo}))}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
-                <XAxis dataKey="cuota" tick={{fill:T.txM,fontSize:9}} axisLine={false} tickLine={false} interval={9}/>
-                <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>fmtM(v)} width={55}/>
+                <XAxis dataKey="cuota" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false} interval={9}/>
+                <YAxis tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>fmtM(v)} width={55}/>
                 <Tooltip content={<ChartTooltip T={T}/>}/>
                 <Area type="monotone" dataKey="saldo" stroke={T.red} fill={T.redBg} name="Saldo"/>
               </AreaChart>
@@ -101,7 +101,7 @@ export default function CreditoView({ C, T }) {
                         <td style={{padding:"6px 10px",textAlign:"right",color:T.tx,fontWeight:600}}>{fmtM(r.valorCuota)}</td>
                         <td style={{padding:"6px 10px",textAlign:"right",color:T.txD}}>{fmtM(r.saldo)}</td>
                         <td style={{padding:"6px 10px",textAlign:"right"}}>
-                          <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:999,background:pagada?T.greenBg:T.accentBg,color:pagada?T.green:T.accent}}>
+                          <span style={{fontSize:11,fontWeight:700,padding:"2px 7px",borderRadius:999,background:pagada?T.greenBg:T.accentBg,color:pagada?T.green:T.accent}}>
                             {pagada?"Pagada":"Pendiente"}
                           </span>
                         </td>
@@ -112,7 +112,7 @@ export default function CreditoView({ C, T }) {
               </table>
             </div>
             <Pagination page={page} totalPages={totalPages} setPage={setPage} T={T}/>
-            <p style={{textAlign:"center",fontSize:10,color:T.txD,marginTop:6}}>
+            <p style={{textAlign:"center",fontSize:11,color:T.txD,marginTop:6}}>
               Cuotas {page*10+1}–{Math.min((page+1)*10, allCuotas.length)} de {allCuotas.length}
             </p>
           </>

@@ -108,14 +108,14 @@ export function exportLeasingExcel(C) {
   const wb = XLSX.utils.book_new();
 
   const emisoresRows = (C.leasingEmisores || []).map(e => [
-    e.emisor, e.contratos, e.operaciones, e.cuotaUF, e.cuotaCLP, e.cuotaIVA, e.deudaUF, e.deudaCLP,
+    e.emisor, e.contratos, e.operaciones, e.cuotaUF, e.cuotaCLP, e.cuotaIVA, e.deudaUF, e.deudaCLP, e.deudaIVA,
   ]);
   emisoresRows.push([
     "TOTAL", C.leasingContratosActivos, C.leasingOperaciones,
-    C.leasingTotalUF, C.leasingTotalCuotaSinIVA, C.leasingTotalCuotaIVA, "", C.leasingDeudaTotal,
+    C.leasingTotalUF, C.leasingTotalCuotaSinIVA, C.leasingTotalCuotaIVA, C.leasingDeudaTotalUF, C.leasingDeudaTotal, C.leasingDeudaTotalIVA,
   ]);
   XLSX.utils.book_append_sheet(wb, sheet(
-    ["Emisor", "Contratos", "Operaciones", "Cuota UF", "Cuota s/IVA", "Cuota c/IVA", "Deuda UF", "Deuda CLP"],
+    ["Emisor", "Contratos", "Operaciones", "Cuota UF", "Cuota s/IVA", "Cuota c/IVA", "Deuda UF", "Deuda s/IVA", "Deuda c/IVA"],
     emisoresRows
   ), "Por Emisor");
 

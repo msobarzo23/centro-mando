@@ -20,11 +20,11 @@ export default function MepcoBanner({ T, year, lastMonth, compact = false, proje
       <div style={{flex:1,minWidth:0}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:3}}>
           <span style={{fontWeight:700,color:T.tx,fontSize:12}}>Ajuste Extraordinario de Tarifas Post-MEPCO</span>
-          <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:999,background:adjustmentActive?`${T.green}22`:`${T.amber}22`,color:adjustmentActive?T.green:T.amber,letterSpacing:0.4}}>
+          <span style={{fontSize:11,fontWeight:700,padding:"2px 7px",borderRadius:999,background:adjustmentActive?`${T.green}22`:`${T.amber}22`,color:adjustmentActive?T.green:T.amber,letterSpacing:0.4}}>
             {adjustmentActive ? "● VIGENTE" : "○ DESDE MAYO 2026"}
           </span>
           {upliftAplicado && upliftPct && (
-            <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:999,background:`${T.violet}22`,color:T.violet,letterSpacing:0.4}}>
+            <span style={{fontSize:11,fontWeight:700,padding:"2px 7px",borderRadius:999,background:`${T.violet}22`,color:T.violet,letterSpacing:0.4}}>
               +{upliftPct}% incluido en proyección
             </span>
           )}

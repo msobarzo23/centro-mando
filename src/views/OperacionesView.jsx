@@ -7,7 +7,7 @@ import {
   Truck, Activity, BarChart3, MapPin, Target, Users, AlertTriangle, FileSpreadsheet, Search,
 } from "lucide-react";
 import { MESES, MESES_FULL } from "../constants.js";
-import { fmtM, fmtPct, pctChange } from "../utils.js";
+import { fmtM, fmtPct, fmtPctArrow, pctChange, occColor, occBg } from "../utils.js";
 import KpiCard from "../components/KpiCard.jsx";
 import SectionCard from "../components/SectionCard.jsx";
 import ChartTooltip from "../components/ChartTooltip.jsx";
@@ -18,6 +18,10 @@ import ContadorSinAccidentes from "../components/ContadorSinAccidentes.jsx";
 export default function OperacionesView({ C, T }) {
   const [monthRange, setMonthRange] = useState(12);
   const [searchCliente, setSearchCliente] = useState("");
+  // Toggle: medir ocupación sobre la flota operativa (excluye tractos parados 30+
+  // días, que en la práctica están fuera de servicio) en vez del padrón completo.
+  const [soloOperativa, setSoloOperativa] = useState(false);
+  const flotaBase = soloOperativa ? (C.flotaOperativa||0) : (C.totalTractocamiones||0);
   // Comparar el mes-a-la-fecha (parcial) contra el mes anterior COMPLETO no tiene
   // sentido (siempre da un -% alarmante). Comparamos la proyección de cierre vs el
   // total del mes anterior, que es la lectura útil de "¿venimos mejor o peor?".
@@ -50,7 +54,7 @@ export default function OperacionesView({ C, T }) {
         <KpiCard icon={Truck} label={`Viajes ${MESES[C.curMonth]} (en curso)`} value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={`Proy. ${C.proyViajesHibrido?.toLocaleString("es-CL")} al cierre (${fmtPct(varProyVsAnt)} vs mes ant.)`} color={varProyVsAnt>=0?T.green:T.red} colorBg={varProyVsAnt>=0?T.greenBg:T.redBg}/>
         <KpiCard icon={Activity} label={`Corte al día ${C.dayOfMonth}`} value={C.viajesCorteActual?.toLocaleString("es-CL")} T={T} sub={`${C.viajesCorteAnterior} mes ant. (${fmtPct(varCorte)})`} color={varCorte>=0?T.green:T.red} colorBg={varCorte>=0?T.greenBg:T.redBg}/>
         <KpiCard icon={BarChart3} label={`Viajes ${C.lastFullDayLabel}`} value={C.viajesAyer?.toLocaleString("es-CL")} T={T} sub="Último día completo" color={T.accent} colorBg={T.accentBg}/>
-        <KpiCard icon={MapPin} label="KM mes actual" value={C.kmMesActual?.toLocaleString("es-CL")} T={T} color={T.teal} colorBg={T.tealBg}/>
+        <KpiCard icon={MapPin} label="KM mes actual" value={C.kmMesActual?.toLocaleString("es-CL")} T={T} sub={C.kmMesAnteriorCorte>0?fmtPct(pctChange(C.kmMesActual,C.kmMesAnteriorCorte))+" vs mismo corte mes ant.":undefined} color={T.teal} colorBg={T.tealBg}/>
         <KpiCard
           icon={Target} label={`Proy. cierre ${MESES[C.curMonth]}`} value={C.proyViajesHibrido?.toLocaleString("es-CL")} T={T}
           sub={`Faltan ~${C.viajesProyectadosFaltantes?.toLocaleString("es-CL")} viajes al cierre`}
@@ -63,7 +67,7 @@ export default function OperacionesView({ C, T }) {
             <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Run-rate plano × mes</span><strong>{C.proyViajesRunRatePlano?.toLocaleString("es-CL")}</strong></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Por día de semana</span><strong>{C.proyViajesDiaSemana?.toLocaleString("es-CL")}</strong></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>= Proyección cierre</span><strong>{C.proyViajesHibrido?.toLocaleString("es-CL")}</strong></div>
-            <div style={{fontSize:10,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
+            <div style={{fontSize:11,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4,paddingTop:6,borderTop:`1px solid ${T.tooltipTx}22`}}>
               Proyecta cada día que falta según el ritmo de las últimas semanas, por día de semana. Excluye el día en curso (aún no termina) y refleja la demanda reciente, no el patrón de {C.prevYear}.
             </div>
           </div>}
@@ -74,7 +78,7 @@ export default function OperacionesView({ C, T }) {
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={Users} label="Conductores contratados" value={String(C.totalContratados||0)} T={T} color={T.accent} colorBg={T.accentBg}/>
-        <KpiCard icon={Users} label="En expedición" value={String(C.totalEnExpedicion||0)} T={T} sub={`${C.pctOcupacionConductores?.toFixed(1)}% ocupación`} color={C.pctOcupacionConductores>=75?T.green:T.red} colorBg={C.pctOcupacionConductores>=75?T.greenBg:T.redBg}/>
+        <KpiCard icon={Users} label="En expedición" value={String(C.totalEnExpedicion||0)} T={T} sub={`${C.pctOcupacionConductores?.toFixed(1)}% ocupación`} color={occColor(C.pctOcupacionConductores||0,T)} colorBg={occBg(C.pctOcupacionConductores||0,T)}/>
         <KpiCard icon={Users} label="No activos" value={String(C.totalNoActivos||0)} T={T} sub="Descanso / licencia / entre turnos" color={T.amber} colorBg={T.amberBg}/>
       </div>
 
@@ -82,8 +86,8 @@ export default function OperacionesView({ C, T }) {
         <KpiCard icon={Truck} label="Flota tractocamiones" value={String(C.totalTractocamiones||0)} T={T} color={T.accent} colorBg={T.accentBg}/>
         <KpiCard
           icon={Truck} label={`En operación (${C.ventanaUtilDias||7} días)`} value={String(C.tractosEnOperacion||0)} T={T}
-          sub={`${C.pctOcupacionTractos?.toFixed(1)}% de la flota · ${C.tractosParados||0} sin viaje`}
-          color={C.pctOcupacionTractos>=75?T.green:T.red} colorBg={C.pctOcupacionTractos>=75?T.greenBg:T.redBg} badge="OCUPACIÓN"
+          sub={`${C.pctOcupacionTractos?.toFixed(1)}% del padrón · ${C.pctOcupacionTractosOperativa?.toFixed(1)}% de la flota operativa · ${C.tractosParados||0} sin viaje`}
+          color={occColor(C.pctOcupacionTractos||0,T)} colorBg={occBg(C.pctOcupacionTractos||0,T)} badge="OCUPACIÓN"
           tooltip={<div>
             <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Ocupación real de flota</div>
             <div style={{fontSize:11,color:T.tooltipTx,opacity:0.85,lineHeight:1.5}}>
@@ -96,11 +100,20 @@ export default function OperacionesView({ C, T }) {
         <KpiCard icon={Truck} label="Despachos/día (prom.)" value={String(C.tractosDespachadosDia||0)} T={T} sub={`${C.pctDespachadosDia?.toFixed(1)}% de la flota sale por día · ${C.diasConDatosTractos||0} días cerrados · ${C.tractosUnicosMes||0} distintos en el mes`} color={T.teal} colorBg={T.tealBg}/>
       </div>
 
-      <SectionCard title="Ocupación de recursos" icon={Target} T={T} color={T.accent}>
+      <SectionCard title="Ocupación de recursos" icon={Target} T={T} color={T.accent}
+        action={
+          <button onClick={()=>setSoloOperativa(v=>!v)} title="Excluye del total los tractos detenidos 30 o más días"
+            style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:999,border:`1px solid ${soloOperativa?T.accent:T.border}`,background:soloOperativa?T.accentBg:"transparent",color:soloOperativa?T.accent:T.txM,cursor:"pointer",fontSize:11,fontWeight:700}}>
+            <span style={{width:24,height:13,borderRadius:999,background:soloOperativa?T.accent:T.bg3,position:"relative",display:"inline-block",transition:"background 0.2s"}}>
+              <span style={{position:"absolute",top:1.5,left:soloOperativa?12:2,width:10,height:10,borderRadius:"50%",background:"#fff",transition:"left 0.2s"}}/>
+            </span>
+            Solo flota operativa
+          </button>
+        }>
         <OccupationBar label="Conductores en expedición" activos={C.totalEnExpedicion||0} total={C.totalContratados||0} T={T}/>
-        <OccupationBar label={`Flota en operación (últimos ${C.ventanaUtilDias||7} días)`} activos={C.tractosEnOperacion||0} total={C.totalTractocamiones||0} T={T}/>
-        <OccupationBar label={`Despachos por día — ${MESES_FULL[C.curMonth]} (promedio)`} activos={C.tractosDespachadosDia||0} total={C.totalTractocamiones||0} T={T}/>
-        <div style={{marginTop:8,fontSize:11,color:T.txD,display:"flex",alignItems:"center",gap:6}}><AlertTriangle size={12}/> La barra de operación mide cuántos tractos movieron carga en la ventana; los despachos/día son cuántos salen en promedio (un tracto en ruta de 2 días sale 1 vez pero ocupa 2).</div>
+        <OccupationBar label={`Flota en operación (últimos ${C.ventanaUtilDias||7} días)${soloOperativa?" — sobre flota operativa":""}`} activos={C.tractosEnOperacion||0} total={flotaBase} T={T}/>
+        <OccupationBar label={`Despachos por día — ${MESES_FULL[C.curMonth]} (promedio)${soloOperativa?" — sobre flota operativa":""}`} activos={C.tractosDespachadosDia||0} total={flotaBase} T={T}/>
+        <div style={{marginTop:8,fontSize:11,color:T.txD,display:"flex",alignItems:"center",gap:6}}><AlertTriangle size={12}/> La barra de operación mide cuántos tractos movieron carga en la ventana; los despachos/día son cuántos salen en promedio (un tracto en ruta de 2 días sale 1 vez pero ocupa 2).{soloOperativa&&<> · Flota operativa: {C.flotaOperativa} de {C.totalTractocamiones} (excluye {C.tractosParados30} parados ≥30 días).</>}</div>
       </SectionCard>
 
       {(C.tractosParadosLista?.length>0)&&(
@@ -146,13 +159,13 @@ export default function OperacionesView({ C, T }) {
             <BarChart data={viajesChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
               <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
-              <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} width={40}/>
+              <YAxis tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false} width={40}/>
               <Tooltip content={<ChartTooltip T={T} prefix="#"/>}/>
               <Bar dataKey="real" stackId="v" fill={T.green} radius={[0,0,0,0]} name="Real"/>
               <Bar dataKey="proyectado" stackId="v" fill={T.amber} fillOpacity={0.55} stroke={T.amber} strokeDasharray="4 2" radius={[4,4,0,0]} name="Falta al cierre"/>
             </BarChart>
           </ResponsiveContainer>
-          <div style={{marginTop:8,padding:"8px 10px",background:T.bg3+"44",borderRadius:6,fontSize:10,color:T.txM,lineHeight:1.4}}>
+          <div style={{marginTop:8,padding:"8px 10px",background:T.bg3+"44",borderRadius:6,fontSize:11,color:T.txM,lineHeight:1.4}}>
             <strong style={{color:T.tx}}>{MESES[C.curMonth]}:</strong> {C.viajesMesActual?.toLocaleString("es-CL")} ejecutados + <span style={{color:T.amber,fontWeight:600}}>{C.viajesProyectadosFaltantes?.toLocaleString("es-CL")} proyectados</span> = <strong style={{color:T.tx}}>{C.proyViajesHibrido?.toLocaleString("es-CL")} al cierre</strong>
           </div>
         </SectionCard>
@@ -180,9 +193,9 @@ export default function OperacionesView({ C, T }) {
                       <td style={{padding:"7px 10px",textAlign:"right",color:T.txD,fontSize:11}}>{c.mesAnt>0?c.mesAnt.toLocaleString("es-CL"):"—"}</td>
                       <td style={{padding:"7px 10px",textAlign:"right",color:T.amber,fontWeight:700}}>
                         {c.proyCierre.toLocaleString("es-CL")}
-                        {c.mesAnt>0&&<div style={{fontSize:9,color:deltaMes>=0?T.green:T.red,fontWeight:600}}>{fmtPct(deltaMes)} vs mes ant.</div>}
+                        {c.mesAnt>0&&<div style={{fontSize:11,color:deltaMes>=0?T.green:T.red,fontWeight:600}}>{fmtPctArrow(deltaMes)} vs mes ant.</div>}
                       </td>
-                      <td style={{padding:"7px 10px",textAlign:"right"}}><span style={{fontSize:10,fontWeight:700,color:avanceColor}}>{c.avancePct.toFixed(0)}%</span></td>
+                      <td style={{padding:"7px 10px",textAlign:"right"}}><span style={{fontSize:11,fontWeight:700,color:avanceColor}}>{c.avancePct.toFixed(0)}%</span></td>
                     </tr>
                   );
                 })}
@@ -197,7 +210,7 @@ export default function OperacionesView({ C, T }) {
               <BarChart data={C.viajesPorMesComparado}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
                 <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
-                <YAxis tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false} width={40}/>
+                <YAxis tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false} width={40}/>
                 <Tooltip content={<ChartTooltip T={T} prefix="#"/>}/>
                 <Legend wrapperStyle={{fontSize:11,color:T.txM}}/>
                 <Bar dataKey="anterior" fill={T.txD} opacity={0.45} radius={[3,3,0,0]} name={String(C.prevYear)}/>
@@ -240,7 +253,7 @@ export default function OperacionesView({ C, T }) {
                           <td style={{...cellR,color:sinDato?T.txD:col,fontWeight:700}}>
                             {sinDato?"—":<>
                               {dif>=0?"+":""}{dif.toLocaleString("es-CL")}
-                              {m.anterior>0&&<div style={{fontSize:9,fontWeight:600}}>{fmtPct(m.var_pct)}</div>}
+                              {m.anterior>0&&<div style={{fontSize:11,fontWeight:600}}>{fmtPct(m.var_pct)}</div>}
                             </>}
                           </td>
                         </tr>
@@ -249,12 +262,12 @@ export default function OperacionesView({ C, T }) {
                   </tbody>
                   <tfoot>
                     <tr style={{borderTop:`2px solid ${T.border}`}}>
-                      <td style={{padding:"8px 10px",color:T.tx,fontWeight:800}}>Total<div style={{fontSize:9,color:T.txD,fontWeight:600}}>{rango}</div></td>
+                      <td style={{padding:"8px 10px",color:T.tx,fontWeight:800}}>Total<div style={{fontSize:11,color:T.txD,fontWeight:600}}>{rango}</div></td>
                       <td style={{...cellR,color:T.tx,fontWeight:700,fontSize:12}}>{totAnterior.toLocaleString("es-CL")}</td>
                       <td style={{...cellR,color:T.tx,fontWeight:800,fontSize:12}}>{totActual.toLocaleString("es-CL")}</td>
                       <td style={{...cellR,color:totDif>=0?T.green:T.red,fontWeight:800,fontSize:12}}>
                         {totDif>=0?"+":""}{totDif.toLocaleString("es-CL")}
-                        {totAnterior>0&&<div style={{fontSize:9,fontWeight:700}}>{fmtPct(totPct)}</div>}
+                        {totAnterior>0&&<div style={{fontSize:11,fontWeight:700}}>{fmtPct(totPct)}</div>}
                       </td>
                     </tr>
                   </tfoot>

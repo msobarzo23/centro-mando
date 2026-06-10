@@ -123,7 +123,7 @@ export default function App() {
 
   if (loading && !computed) {
     return (
-      <div style={{background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:T.tx,fontFamily:"'Inter','SF Pro Display',system-ui,sans-serif"}}>
+      <div style={{background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:T.tx,fontFamily:"'Plus Jakarta Sans','SF Pro Display',system-ui,sans-serif"}}>
         <div style={{textAlign:"center"}}>
           <RefreshCw size={32} color={T.accent} style={{animation:"spin 1s linear infinite"}}/>
           <p style={{marginTop:16,color:T.txM}}>Cargando datos...</p>
@@ -137,7 +137,7 @@ export default function App() {
   const activeAlerts = (C.alertas||[]).length;
 
   return (
-    <div className={presentation?"cm-presentation":""} style={{background:T.bg,minHeight:"100vh",fontFamily:"'Inter','SF Pro Display',system-ui,sans-serif",color:T.tx}}>
+    <div className={presentation?"cm-presentation":""} style={{background:T.bg,minHeight:"100vh",fontFamily:"'Plus Jakarta Sans','SF Pro Display',system-ui,sans-serif",color:T.tx}}>
       {loading && computed && (
         <div style={{position:"fixed",top:0,left:0,right:0,height:3,zIndex:200,background:T.accentBg,overflow:"hidden"}}>
           <div style={{height:"100%",background:T.accent,animation:"progressBar 1.5s ease-in-out infinite",transformOrigin:"left"}}/>
@@ -172,7 +172,7 @@ export default function App() {
             <div style={{height:64,width:1,background:T.border}}/>
             <div>
               <div style={{fontSize:15,fontWeight:700,color:T.tx,letterSpacing:-0.3}}>Centro de Mando — Don Luis Bello</div>
-              <div style={{fontSize:10,color:T.txD}}>Transportes Bello e Hijos Ltda.</div>
+              <div style={{fontSize:11,color:T.txD}}>Transportes Bello e Hijos Ltda.</div>
             </div>
           </div>
         </div>
@@ -180,7 +180,7 @@ export default function App() {
           {timeAgo && (() => {
             const mins = lastUpdate ? Math.floor((Date.now()-lastUpdate.getTime())/60000) : 999;
             const col = mins<5?T.green:mins<30?T.amber:T.red;
-            return <span style={{fontSize:10,color:col,fontWeight:500}}>{timeAgo}</span>;
+            return <span style={{fontSize:11,color:col,fontWeight:500}}>{timeAgo}</span>;
           })()}
           {computed && (
             <button onClick={async()=>{const{exportFullPDF}=await import("./services/exportPDF.js");exportFullPDF(computed);}} title="Exportar reporte ejecutivo PDF" style={{display:"flex",alignItems:"center",gap:5,background:T.accentBg,border:`1px solid ${T.accent}44`,borderRadius:7,cursor:"pointer",color:T.accent,padding:"4px 10px",fontSize:11,fontWeight:600}}>
@@ -204,7 +204,7 @@ export default function App() {
             return (
               <button key={t.id} onClick={()=>{setTab(t.id);setMobileMenu(false);}} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,border:"none",cursor:"pointer",width:"100%",textAlign:"left",background:active?T.accentBg:"transparent",color:active?T.accent:T.txM,fontWeight:active?600:400,fontSize:13,transition:"all 0.15s"}}>
                 <t.icon size={16}/>{t.label}
-                {t.id==="alertas"&&activeAlerts>0&&(<span style={{marginLeft:"auto",background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"1px 7px"}}>{activeAlerts}</span>)}
+                {t.id==="alertas"&&activeAlerts>0&&(<span style={{marginLeft:"auto",background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:10,padding:"1px 7px"}}>{activeAlerts}</span>)}
               </button>
             );
           })}
@@ -213,7 +213,7 @@ export default function App() {
         {mobileMenu&&(
           <div className="mobile-nav-overlay" style={{position:"fixed",top:52,left:0,right:0,bottom:0,zIndex:99,background:"rgba(0,0,0,0.5)"}} onClick={()=>setMobileMenu(false)}>
             <div style={{width:220,background:T.bg2,height:"100%",padding:"16px 8px",display:"flex",flexDirection:"column",gap:2}} onClick={e=>e.stopPropagation()}>
-              {TABS.map(t=>{const active=tab===t.id;return(<button key={t.id} onClick={()=>{setTab(t.id);setMobileMenu(false);}} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderRadius:10,border:"none",cursor:"pointer",width:"100%",textAlign:"left",background:active?T.accentBg:"transparent",color:active?T.accent:T.txM,fontWeight:active?600:400,fontSize:14}}><t.icon size={18}/> {t.label}{t.id==="alertas"&&activeAlerts>0&&(<span style={{marginLeft:"auto",background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"2px 8px"}}>{activeAlerts}</span>)}</button>);})}
+              {TABS.map(t=>{const active=tab===t.id;return(<button key={t.id} onClick={()=>{setTab(t.id);setMobileMenu(false);}} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderRadius:10,border:"none",cursor:"pointer",width:"100%",textAlign:"left",background:active?T.accentBg:"transparent",color:active?T.accent:T.txM,fontWeight:active?600:400,fontSize:14}}><t.icon size={18}/> {t.label}{t.id==="alertas"&&activeAlerts>0&&(<span style={{marginLeft:"auto",background:T.red,color:"#fff",fontSize:11,fontWeight:700,borderRadius:10,padding:"2px 8px"}}>{activeAlerts}</span>)}</button>);})}
             </div>
           </div>
         )}
@@ -240,7 +240,7 @@ export default function App() {
 
       <nav className="bottom-nav" style={{position:"fixed",bottom:0,left:0,right:0,background:T.bg2,borderTop:`1px solid ${T.border}`,display:"none",zIndex:100}}>
         <div ref={bottomNavRef} className="bottom-nav-scroll" style={{display:"flex",overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",padding:"6px 8px env(safe-area-inset-bottom,8px)"}}>
-          {TABS.map(t=>{const active=tab===t.id;return(<button key={t.id} data-active={active?"true":undefined} onClick={()=>setTab(t.id)} style={{flex:"0 0 auto",minWidth:62,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:active?T.accentBg:"none",borderRadius:10,border:"none",cursor:"pointer",padding:"6px 10px",color:active?T.accent:T.txD,fontSize:10,fontWeight:active?600:400,whiteSpace:"nowrap",position:"relative"}}><t.icon size={18}/>{t.label}{t.id==="alertas"&&activeAlerts>0&&(<span style={{position:"absolute",top:0,right:2,background:T.red,color:"#fff",fontSize:8,fontWeight:700,borderRadius:6,padding:"0 4px",lineHeight:"14px"}}>{activeAlerts}</span>)}</button>);})}
+          {TABS.map(t=>{const active=tab===t.id;return(<button key={t.id} data-active={active?"true":undefined} onClick={()=>setTab(t.id)} style={{flex:"0 0 auto",minWidth:62,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:active?T.accentBg:"none",borderRadius:10,border:"none",cursor:"pointer",padding:"6px 10px",color:active?T.accent:T.txD,fontSize:11,fontWeight:active?600:400,whiteSpace:"nowrap",position:"relative"}}><t.icon size={18}/>{t.label}{t.id==="alertas"&&activeAlerts>0&&(<span style={{position:"absolute",top:0,right:2,background:T.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:6,padding:"0 4px",lineHeight:"14px"}}>{activeAlerts}</span>)}</button>);})}
         </div>
         <div className="bottom-nav-fade" style={{position:"absolute",top:0,right:0,bottom:0,width:28,pointerEvents:"none",background:`linear-gradient(to right, transparent, ${T.bg2})`}}/>
       </nav>

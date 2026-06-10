@@ -59,7 +59,7 @@ export default function SemaforoEjecutivo({ C, T }) {
           {sem.signals.map((s, i) => {
             const sc = colorMap[s.level];
             return (
-              <span key={i} style={{fontSize:10,color:T.txM,display:"flex",alignItems:"center",gap:4}}>
+              <span key={i} style={{fontSize:11,color:T.txM,display:"flex",alignItems:"center",gap:4}}>
                 <CircleDot size={8} color={sc.c}/>{s.text}
               </span>
             );
