@@ -212,7 +212,7 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
               </ComposedChart>
             </ResponsiveContainer>
             <div style={{marginTop:10,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
-              <strong style={{color:T.tx}}>Cómo se calcula:</strong> facturación del mes ÷ {esKm?"kilómetros":"viajes"} del mes anterior (los viajes se facturan al mes siguiente). Solo meses cerrados.
+              <strong style={{color:T.tx}}>Cómo se calcula:</strong> facturación del mes ÷ {esKm?"kilómetros con carga":"viajes"} del mes anterior (los viajes se facturan al mes siguiente). Solo meses cerrados.{esKm&&<> Se excluyen los retornos vacíos, que la planilla registra solo desde 2026, para que ambos años sean comparables.</>}
               {ult&&<> Última tarifa: <strong style={{color:T.teal}}>{fmtT(esKm?ult.actualKm:ult.actual)}</strong> ({ult.mes}).</>}
               {" "}Si esta línea cae mientras la facturación sube, el crecimiento viene de volumen y no de precio — señal de erosión de tarifas.
             </div>

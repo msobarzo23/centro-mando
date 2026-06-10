@@ -704,8 +704,11 @@ export function computeAll(data) {
   // Ingreso por viaje y por km, con el desfase real del negocio: los viajes de un
   // mes se facturan al mes siguiente. tarifa[mF] = ventas[mF] / viajes[mF-1].
   // Solo meses cerrados (el mes en curso tiene facturación parcial y distorsiona).
+  // Solo tramos CON cliente (cargados): desde ene-2026 la planilla de flota registra
+  // también los retornos vacíos (Carga=VACIO, sin cliente), que en 2025 no existían.
+  // Sumar todo hacía incomparable el $/km entre años (2026 salía ~30% más bajo).
   const kmPorMesActualArr=Array(12).fill(0), kmPorMesPrevArr=Array(12).fill(0);
-  flotaRows.forEach(r=>{const m=r._date.getMonth();if(r._date.getFullYear()===curYear)kmPorMesActualArr[m]+=r._km;else if(r._date.getFullYear()===prevYear)kmPorMesPrevArr[m]+=r._km;});
+  flotaRows.forEach(r=>{if(!r._cliente)return;const m=r._date.getMonth();if(r._date.getFullYear()===curYear)kmPorMesActualArr[m]+=r._km;else if(r._date.getFullYear()===prevYear)kmPorMesPrevArr[m]+=r._km;});
   const tarifaPorMes=[];
   for(let mF=1;mF<12;mF++){
     const cerrado=mF<curMonth;
