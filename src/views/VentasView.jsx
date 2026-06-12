@@ -37,7 +37,7 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
   const projectionModes = [
     {id:"seasonal",label:"Estacional",desc:"Basada en patrón mensual del año anterior"},
     {id:"prorata",label:"Prorrateada",desc:"Prorrateo por días hábiles transcurridos"},
-    {id:"lineal",label:"Lineal",desc:"Promedio simple × 12"},
+    {id:"lineal",label:"Lineal",desc:"Promedio de meses cerrados × 12"},
   ];
 
   const chartDataAll = (C.ventasPorMesConProyeccion||[]).map((m,i) => {

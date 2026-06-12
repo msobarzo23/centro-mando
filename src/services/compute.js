@@ -121,7 +121,16 @@ export function computeAll(data) {
   const ytdTotal = ytdClosed + ytdOpen;
 
   const allMonthsCount = monthsWithData.length;
-  const projLinear = allMonthsCount>0 ? (ytdTotal/allMonthsCount)*12 : 0;
+  // Promedio simple × 12 usando SOLO meses cerrados: antes el mes en curso entraba
+  // al promedio como si fuera un mes completo y arrastraba la proyección hacia
+  // abajo (con junio al 45% se perdían ~$5.000M artificiales). Si aún no hay meses
+  // cerrados (enero en curso), se prorratea el mes abierto por días hábiles.
+  let projLinear = 0;
+  if (closedMonths.length>0) projLinear = (ytdClosed/closedMonths.length)*12;
+  else if (openMonth) {
+    const elapsed=businessDaysElapsed(curYear,openMonth,now); const total=businessDaysInMonth(curYear,openMonth);
+    projLinear = (elapsed>0?ytdOpen*(total/elapsed):ytdOpen)*12;
+  }
 
   let projProrata = 0;
   if (closedMonths.length>0) {
@@ -156,6 +165,34 @@ export function computeAll(data) {
     }
   }
 
+  // ── Uplift OBSERVADO vs teórico ──
+  // El uplift teórico (mapa de reajustes × mix de clientes) supone que el alza se
+  // factura completa. Los meses ya CERRADOS post-reajuste dicen cuánto se
+  // materializó de verdad: se compara lo facturado contra el contrafactual
+  // "mismo mes del año anterior × crecimiento de los meses PRE-reajuste".
+  // Para PROYECTAR se usa el MENOR entre teórico y observado (acotado a ≥0):
+  // prudente, y se corrige solo a medida que cierran más meses. Para AUDITAR
+  // meses pasados (tabla de cumplimiento) se mantiene el teórico: si el reajuste
+  // pactado no aparece en la facturación, eso es justamente lo que hay que ver.
+  const mesesPreCerrados = closedMonths.filter(m=>m<MEPCO_ADJUSTMENT_MONTH);
+  const mesesPostCerrados = curYear===MEPCO_ADJUSTMENT_YEAR ? closedMonths.filter(m=>m>=MEPCO_ADJUSTMENT_MONTH) : [];
+  let upliftObservado = null;
+  if (mesesPreCerrados.length>0 && mesesPostCerrados.length>0) {
+    const actPre=mesesPreCerrados.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.actual||0),0);
+    const antPre=mesesPreCerrados.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.anterior||0),0);
+    const actPost=mesesPostCerrados.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.actual||0),0);
+    const antPost=mesesPostCerrados.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.anterior||0),0);
+    if (antPre>0 && antPost>0) {
+      const growthPre=actPre/antPre;
+      upliftObservado=actPost/(antPost*growthPre)-1;
+    }
+  }
+  const upliftProyPorMes={};
+  for(let m=1;m<=12;m++){
+    const teo=upliftPorMes[m]||0;
+    upliftProyPorMes[m]=upliftObservado==null?teo:Math.min(teo,Math.max(0,upliftObservado));
+  }
+
   let projSeasonal = 0;
   const totalPrev = ventasAnoAnterior;
   if (totalPrev>0) {
@@ -166,22 +203,25 @@ export function computeAll(data) {
       let openContribution = ytdOpen;
       if (openMonth) {
         const weightOpen=weights[openMonth-1];
-        const upliftOpen=upliftPorMes[openMonth]||0;
+        const upliftOpen=upliftProyPorMes[openMonth]||0;
         const expectedOpen=annualFromClosed*weightOpen*(1+upliftOpen);
         const elapsed=businessDaysElapsed(curYear,openMonth,now); const total=businessDaysInMonth(curYear,openMonth);
         const openProrata=elapsed>0?ytdOpen*(total/elapsed):ytdOpen;
         openContribution=Math.max(openProrata,expectedOpen);
       }
       const futureMonths = []; for(let m=1;m<=12;m++){if(!closedMonths.includes(m)&&m!==openMonth)futureMonths.push(m);}
-      const futureContribution = futureMonths.reduce((s,m)=>s+(annualFromClosed*weights[m-1]*(1+(upliftPorMes[m]||0))),0);
+      const futureContribution = futureMonths.reduce((s,m)=>s+(annualFromClosed*weights[m-1]*(1+(upliftProyPorMes[m]||0))),0);
       projSeasonal = ytdClosed+openContribution+futureContribution;
     }
   }
   if (projSeasonal===0 && projProrata>0) projSeasonal=projProrata;
 
   const futureMonthsList = []; for(let m=1;m<=12;m++){if(!monthsWithData.includes(m))futureMonthsList.push(m);}
-  const upliftFuturos = futureMonthsList.map(m => upliftPorMes[m]||0).filter(v=>v>0);
-  const upliftAplicadoPromedio = upliftFuturos.length>0 ? upliftFuturos.reduce((s,v)=>s+v,0)/upliftFuturos.length : 0;
+  const upliftFutTeo = futureMonthsList.map(m => upliftPorMes[m]||0).filter(v=>v>0);
+  const upliftTeoricoPromedio = upliftFutTeo.length>0 ? upliftFutTeo.reduce((s,v)=>s+v,0)/upliftFutTeo.length : 0;
+  // Promedio realmente aplicado en la proyección (acotado por el observado).
+  const upliftFutApl = futureMonthsList.filter(m=>(upliftPorMes[m]||0)>0).map(m=>upliftProyPorMes[m]||0);
+  const upliftAplicadoPromedio = upliftFutApl.length>0 ? upliftFutApl.reduce((s,v)=>s+v,0)/upliftFutApl.length : 0;
 
   const projections = {
     monthInProgress, openMonth, closedMonthsCount:closedMonths.length,
@@ -190,6 +230,7 @@ export function computeAll(data) {
     businessDaysElapsed:openMonth?businessDaysElapsed(curYear,openMonth,now):0,
     businessDaysTotal:openMonth?businessDaysInMonth(curYear,openMonth):0,
     upliftPorMes, upliftAplicadoPromedio, upliftAplicado: upliftAplicadoPromedio>0,
+    upliftTeoricoPromedio, upliftObservado,
   };
 
   const ventasPorMesConProyeccion = ventasPorMesComparado.map((m,i) => {
@@ -297,7 +338,10 @@ export function computeAll(data) {
     // Uplift MEPCO: las tasas vienen del año previo (pre-reajuste). Para meses con
     // alza vigente, aplicar el mismo uplift ponderado por mix de clientes que usa
     // la proyección estacional, así "Por viajes" queda comparable con "Falta facturar mes".
-    const upliftMes = upliftPorMes[mF] || 0;
+    // Meses pasados (auditoría de cumplimiento): uplift TEÓRICO — si el reajuste
+    // pactado no aparece en lo facturado, eso es lo que la tabla debe detectar.
+    // Mes en curso y futuros (proyección): uplift acotado por el observado.
+    const upliftMes = (mF >= curMonth ? upliftProyPorMes[mF] : upliftPorMes[mF]) || 0;
     facturacionProyViajesSinMepco[mF]=totalProy;
     if (upliftMes > 0) {
       totalProy = totalProy * (1 + upliftMes);
