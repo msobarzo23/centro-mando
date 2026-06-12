@@ -297,6 +297,55 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
         </ResponsiveContainer>
       </SectionCard>
 
+      {(C.cumplimientoMensual||[]).length>0&&(()=>{
+        const lecturas={
+          superado:{label:"✓ Superado",color:T.green,bg:T.greenBg,detalle:"Se facturó más de lo esperado"},
+          ok:{label:"✓ En línea",color:T.green,bg:T.greenBg,detalle:"Dentro del ±3% de lo esperado"},
+          estimacion:{label:"Menor demanda",color:T.amber,bg:T.amberBg,detalle:"Se facturó lo que daban los viajes, pero hubo menos actividad que el patrón histórico"},
+          facturacion:{label:"⚠ Revisar facturación",color:T.red,bg:T.redBg,detalle:"Los viajes ejecutados valían más de lo facturado — posibles viajes sin facturar"},
+        };
+        const conAlerta=C.cumplimientoMensual.filter(r=>r.lectura==="facturacion").length;
+        return(
+          <SectionCard title={`Proyectado vs. real — meses cerrados ${C.curYear}`} icon={Target} T={T} color={T.amber}
+            action={conAlerta>0
+              ?<span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,background:T.redBg,color:T.red,letterSpacing:0.4}}>⚠ {conAlerta} MES{conAlerta!==1?"ES":""} POR REVISAR</span>
+              :<span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,background:T.greenBg,color:T.green,letterSpacing:0.4}}>✓ SIN PENDIENTES</span>}>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr>
+                  {["Mes","Esperado por viajes","Esperado estacional","Facturado real","Desvío","Lectura"].map((h,i)=>(
+                    <th key={i} style={{padding:"8px 10px",textAlign:i===0?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {C.cumplimientoMensual.map((r,i)=>{
+                    const lec=lecturas[r.lectura]||lecturas.ok;
+                    return(
+                      <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}} title={lec.detalle}>
+                        <td style={{padding:"7px 10px",color:T.tx,fontWeight:600}}>{r.mes}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",color:T.teal,fontWeight:600}}>{r.espViajes!=null?fmtM(r.espViajes):"—"}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",color:T.txM}}>{r.espEstacional!=null?fmtM(r.espEstacional):"—"}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",color:T.tx,fontWeight:700}}>{fmtM(r.real)}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",color:r.desvio==null?T.txD:r.desvio>=0?T.green:T.red,fontWeight:700}}>
+                          {r.desvio==null?"—":`${r.desvio>=0?"+":"−"}${fmtM(Math.abs(r.desvio))} (${r.desvioPct>=0?"+":""}${r.desvioPct.toFixed(1)}%)`}
+                        </td>
+                        <td style={{padding:"7px 10px",textAlign:"right"}}>
+                          <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,background:lec.bg,color:lec.color,whiteSpace:"nowrap"}}>{lec.label}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{marginTop:10,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
+              <strong style={{color:T.tx}}>Cómo leer esto: </strong>
+              Para cada mes ya cerrado se compara lo facturado contra dos referencias. <strong style={{color:T.teal}}>Esperado por viajes</strong> = viajes reales del mes anterior × tarifa de cada cliente: si el real quedó por debajo, hay viajes que valían más de lo que se facturó — <strong style={{color:T.red}}>revisar viajes sin facturar</strong>. <strong>Esperado estacional</strong> = el mismo mes del año pasado escalado por el crecimiento real del resto del año: si se cumplió lo de los viajes pero no esto, fue menor demanda o error de estimación, no un problema de facturación. El desvío se mide contra el esperado por viajes.
+            </div>
+          </SectionCard>
+        );
+      })()}
+
       <SectionCard title="Detalle mensual" icon={FileText} T={T} color={T.accent}>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>

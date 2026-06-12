@@ -285,10 +285,13 @@ export function computeAll(data) {
   const facturacionProyectadaPorViajes = Array(12).fill(0);
   const facturacionProyViajesSinMepco = Array(12).fill(0);
   const desglosePorMesFactura = {};
-  for(let mV=0;mV<12;mV++){
-    const mF=mV+1; if(mF>11)continue;
+  // mF = mes de facturación (índice 0-11); sus viajes son del mes anterior. Para
+  // enero los viajes son de diciembre del año previo, así el registro de
+  // cumplimiento proyectado vs real cubre todos los meses cerrados del año.
+  for(let mF=0;mF<12;mF++){
+    const vYear=mF===0?prevYear:curYear, vMonth=mF===0?11:mF-1;
     const viajesMesCliente={};
-    viajesRows.forEach(r=>{if(r._date.getFullYear()!==curYear||r._date.getMonth()!==mV)return;const k=normClienteKey(r._cliente);if(!k)return;viajesMesCliente[k]=(viajesMesCliente[k]||0)+1;});
+    viajesRows.forEach(r=>{if(r._date.getFullYear()!==vYear||r._date.getMonth()!==vMonth)return;const k=normClienteKey(r._cliente);if(!k)return;viajesMesCliente[k]=(viajesMesCliente[k]||0)+1;});
     let totalProy=0; const desglose=[];
     Object.entries(viajesMesCliente).forEach(([k,count])=>{const t=tasaPorCliente[k];const tasa=(t&&t.tasa)||tasaGlobal;const aporte=count*tasa;totalProy+=aporte;desglose.push({cliente:k,viajes:count,tasa,aporte,confianza:t?t.confianza:"global"});});
     // Uplift MEPCO: las tasas vienen del año previo (pre-reajuste). Para meses con
@@ -314,6 +317,37 @@ export function computeAll(data) {
     else if(m===curMonth)proyAnualPorViajes+=Math.max(real,facturacionProyectadaPorViajes[m]);
     else{const proyV=facturacionProyectadaPorViajes[m]||0;if(proyV>0)proyAnualPorViajes+=proyV;else if(projSeasonal>0&&totalPrev>0){const w=(ventasPorMesComparado[m]?.anterior||0)/totalPrev;proyAnualPorViajes+=projSeasonal*w;}}
   }
+
+  // ══════════ CUMPLIMIENTO PROYECTADO VS REAL (meses cerrados) ══════════
+  // Las proyecciones "en vivo" se recalculan cada día y no quedan guardadas, así
+  // que para cada mes ya cerrado se reconstruye lo esperado con dos métodos
+  // reproducibles y se compara contra lo facturado:
+  //  - "por viajes": viajes reales del mes anterior × tarifa por cliente. Si lo
+  //    facturado quedó por debajo, los viajes ejecutados valían más de lo que se
+  //    facturó → posible facturación pendiente.
+  //  - "estacional": el mismo mes del año anterior escalado por el crecimiento
+  //    real de los DEMÁS meses cerrados (se excluye el propio mes para no ser
+  //    circular). Si se facturó lo que daban los viajes pero igual quedó bajo el
+  //    estacional, fue menor demanda / error de estimación, no facturación.
+  const TOLERANCIA_CUMPLIMIENTO=0.03; // ±3% se considera "en línea"
+  const cumplimientoMensual=closedMonths.map(mNum=>{
+    const i=mNum-1;
+    const real=ventasPorMesComparado[i]?.actual||0;
+    const espViajes=facturacionProyectadaPorViajes[i]>0?facturacionProyectadaPorViajes[i]:null;
+    const otros=closedMonths.filter(m=>m!==mNum);
+    const sumAct=otros.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.actual||0),0);
+    const sumAnt=otros.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.anterior||0),0);
+    const anterior=ventasPorMesComparado[i]?.anterior||0;
+    const espEstacional=otros.length>0&&sumAnt>0&&anterior>0?anterior*(sumAct/sumAnt)*(1+(upliftPorMes[mNum]||0)):null;
+    const base=espViajes!=null?espViajes:espEstacional;
+    const desvio=base!=null?real-base:null;
+    const desvioPct=base?((real-base)/base)*100:null;
+    let lectura="ok";
+    if(espViajes!=null&&real<espViajes*(1-TOLERANCIA_CUMPLIMIENTO))lectura="facturacion";
+    else if(espEstacional!=null&&real<espEstacional*(1-TOLERANCIA_CUMPLIMIENTO))lectura="estimacion";
+    else if(base!=null&&real>base*(1+TOLERANCIA_CUMPLIMIENTO))lectura="superado";
+    return {mes:MESES[i],mesNum:mNum,real,espViajes,espEstacional,desvio,desvioPct,lectura};
+  });
 
   const vClienteMap={};viajesMesActual.forEach(r=>{vClienteMap[r._cliente]=(vClienteMap[r._cliente]||0)+1;});
   const topClientesViajes=Object.entries(vClienteMap).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,count])=>({name,count}));
@@ -578,6 +612,12 @@ export function computeAll(data) {
   if(totalTractocamiones>0&&pctOcupacionTractos<UMBRAL_OCUPACION_ALERTA){alertas.push({type:"warning",icon:Truck,msg:`Flota en operación (${ventanaUtilDias}d): ${pctOcupacionTractos.toFixed(1)}% — ${tractosEnOperacion} de ${totalTractocamiones}, ${tractosParados} sin viaje`});}
   if(primeraSemanaCritica){alertas.push({type:"danger",icon:AlertTriangle,msg:`Semana ${primeraSemanaCritica.label}: faltan ${fmtM(primeraSemanaCritica.falta)} por cubrir`});}
   if(coberturaRatio30!==null&&coberturaRatio30<UMBRAL_LIQUIDEZ_AMARILLA){alertas.push({type:"warning",icon:AlertTriangle,msg:`Liquidez 30d insuficiente: ${fmtM(liquidez30)} vs compromisos ${fmtM(comp30)}`});}
+  // Cierre de mes bajo lo esperado por viajes → posible facturación pendiente.
+  // Solo el último mes cerrado: los anteriores quedan como registro en la tabla.
+  const ultimoCierre=cumplimientoMensual[cumplimientoMensual.length-1];
+  if(ultimoCierre&&ultimoCierre.lectura==="facturacion"){
+    alertas.push({type:"warning",icon:AlertTriangle,msg:`${ultimoCierre.mes} cerró con ${fmtM(ultimoCierre.real)} vs ${fmtM(ultimoCierre.espViajes)} esperado por viajes (faltan ${fmtM(ultimoCierre.espViajes-ultimoCierre.real)}) — revisar viajes sin facturar`});
+  }
   // Alerta comercial: cliente relevante (≥20 viajes/mes) cuya proyección de cierre
   // cae más de 20% contra el mes anterior.
   topClientesViajesProy.forEach(c=>{
@@ -743,5 +783,5 @@ export function computeAll(data) {
   const histRows=parseHistorico(data.historico);
   const comparativas=computeComparativas(histRows,now);
 
-  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes,totalMesActualBruto,leasingDeudaTotalIVA,creditoMontoOriginal,creditoCuotasGracia,concentracionTop2,tarifaPorMes,servicioDeudaMensual,frescuraFuentes,tractosParados30,flotaOperativa,pctOcupacionTractosOperativa,kmMesAnteriorCorte};
+  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes,totalMesActualBruto,leasingDeudaTotalIVA,creditoMontoOriginal,creditoCuotasGracia,concentracionTop2,tarifaPorMes,cumplimientoMensual,servicioDeudaMensual,frescuraFuentes,tractosParados30,flotaOperativa,pctOcupacionTractosOperativa,kmMesAnteriorCorte};
 }
