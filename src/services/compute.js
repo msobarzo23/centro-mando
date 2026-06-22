@@ -508,7 +508,7 @@ export function computeAll(data) {
   const pctOcupacionConductores=totalContratados>0?(totalEnExpedicion/totalContratados)*100:0;
 
   // ══════════ TRACTOS ══════════
-  const flotaRows=(data.flotaViajes||[]).map(r=>({...r,_date:parseDate(r.Fecha||r.fecha||r.fechainicio),_km:parseNum(r.Kilometro||r.kilometro||r.km),_tracto:(r.Tracto||r.tracto||"").trim(),_origen:r.Origen||r.origen||"",_destino:r.Destino||r.destino||"",_cliente:r.Cliente||r.cliente||""})).filter(r=>r._date);
+  const flotaRows=(data.flotaViajes||[]).map(r=>({...r,_date:parseDate(r.Fecha||r.fecha||r.fechainicio),_km:parseNum(r.Kilometro||r.kilometro||r.km),_tracto:(r.Tracto||r.tracto||"").trim(),_origen:r.Origen||r.origen||"",_destino:r.Destino||r.destino||"",_cliente:r.Cliente||r.cliente||"",_carga:(r.Carga||r.carga||"").trim(),_cond:`${(r.Nombre||r.nombre||"").trim()} ${(r.Apellido||r.apellido||"").trim()}`.trim()})).filter(r=>r._date);
   const flotaMesActual=flotaRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===curYear);
   const kmMesActual=flotaMesActual.reduce((s,r)=>s+r._km,0);
   const kmAnioActual=flotaRows.filter(r=>r._date.getFullYear()===curYear).reduce((s,r)=>s+r._km,0);
@@ -582,6 +582,54 @@ export function computeAll(data) {
 
   // KM del mes anterior al mismo corte de días, para dar contexto al KPI de KM.
   const kmMesAnteriorCorte=flotaRows.filter(r=>{const pm=curMonth===0?11:curMonth-1;const py=curMonth===0?curYear-1:curYear;return r._date.getMonth()===pm&&r._date.getFullYear()===py&&r._date.getDate()<=dayOfMonth;}).reduce((s,r)=>s+r._km,0);
+
+  // ══════════ RUTAS (origen → destino) ══════════
+  // Corredores físicos reconstruidos desde flotaViajes (año en curso). Solo tramos
+  // CARGADOS (con cliente y carga distinta de VACIO): los retornos vacíos no son una
+  // "ruta comercial" y desde 2026 la planilla los registra (ver km vacíos). Por ruta
+  // se acumulan nº de viajes, km total/promedio y el cliente y la carga dominantes.
+  const flotaAnio = flotaRows.filter(r=>r._date.getFullYear()===curYear);
+  const flotaCargada = flotaAnio.filter(r=>r._cliente && (r._carga||"").toUpperCase()!=="VACIO");
+  const topNameOf=(m)=>{const e=Object.entries(m).sort((a,b)=>b[1]-a[1])[0];return e?e[0]:"—";};
+  const rutaMap={};
+  flotaCargada.forEach(r=>{
+    const o=(r._origen||"").trim().toUpperCase(), d=(r._destino||"").trim().toUpperCase();
+    if(!o||!d)return;
+    const k=`${o} → ${d}`;
+    if(!rutaMap[k])rutaMap[k]={ruta:k,origen:o,destino:d,viajes:0,km:0,clientes:{},cargas:{}};
+    const e=rutaMap[k];e.viajes++;e.km+=r._km;
+    if(r._cliente)e.clientes[r._cliente]=(e.clientes[r._cliente]||0)+1;
+    if(r._carga)e.cargas[r._carga]=(e.cargas[r._carga]||0)+1;
+  });
+  const rutasArr=Object.values(rutaMap).map(r=>({ruta:r.ruta,origen:r.origen,destino:r.destino,viajes:r.viajes,km:r.km,kmProm:r.viajes>0?r.km/r.viajes:0,clientePrincipal:topNameOf(r.clientes),cargaPrincipal:topNameOf(r.cargas)})).sort((a,b)=>b.viajes-a.viajes);
+  const rutasDistintas=rutasArr.length;
+  const rutasViajesTotal=rutasArr.reduce((s,r)=>s+r.viajes,0);
+  const rutasKmTotal=rutasArr.reduce((s,r)=>s+r.km,0);
+  const concentracionTop5Rutas=rutasViajesTotal>0?(rutasArr.slice(0,5).reduce((s,r)=>s+r.viajes,0)/rutasViajesTotal)*100:null;
+  const topRutas=rutasArr.slice(0,15);
+
+  // ══════════ PRODUCTIVIDAD POR CONDUCTOR ══════════
+  // flotaViajes trae el conductor (Nombre + Apellido) por tramo. Se acumulan km y
+  // tramos del año en curso, incluyendo tramos vacíos (son km realmente conducidos:
+  // reposicionamiento de flota). Se excluye el comodín "TRANSPORTES BELLO". La cola
+  // de baja utilización (km < 50% del promedio) destaca conductores subocupados.
+  const condMap={};
+  flotaAnio.forEach(r=>{
+    const c=(r._cond||"").trim();
+    if(!c||c.toUpperCase().includes("TRANSPORTES BELLO"))return;
+    if(!condMap[c])condMap[c]={conductor:c,km:0,tramos:0,last:null};
+    const e=condMap[c];e.km+=r._km;e.tramos++;
+    if(!e.last||r._date>e.last)e.last=r._date;
+  });
+  const condArr=Object.values(condMap).filter(c=>c.km>0).map(c=>({
+    conductor:c.conductor,km:c.km,tramos:c.tramos,kmTramo:c.tramos>0?c.km/c.tramos:0,
+    ultimoLabel:c.last?c.last.toLocaleDateString("es-CL",{day:"2-digit",month:"short"}):"—",
+    diasSinViaje:c.last?Math.round((nowMid-new Date(c.last.getFullYear(),c.last.getMonth(),c.last.getDate()))/86400000):null,
+  })).sort((a,b)=>b.km-a.km);
+  const conductoresConViajes=condArr.length;
+  const kmPromedioConductor=conductoresConViajes>0?condArr.reduce((s,c)=>s+c.km,0)/conductoresConViajes:0;
+  const conductoresBajaUtilizacion=condArr.filter(c=>c.km<kmPromedioConductor*0.5).length;
+  const topConductores=condArr.slice(0,20);
 
   // ══════════ FINANZAS ══════════
   // Saldo por banco: tomamos el "Saldo Final" de la fila con la FECHA más reciente
@@ -827,5 +875,5 @@ export function computeAll(data) {
   const histRows=parseHistorico(data.historico);
   const comparativas=computeComparativas(histRows,now);
 
-  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes,totalMesActualBruto,leasingDeudaTotalIVA,creditoMontoOriginal,creditoCuotasGracia,concentracionTop2,tarifaPorMes,cumplimientoMensual,servicioDeudaMensual,frescuraFuentes,tractosParados30,flotaOperativa,pctOcupacionTractosOperativa,kmMesAnteriorCorte};
+  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes,totalMesActualBruto,leasingDeudaTotalIVA,creditoMontoOriginal,creditoCuotasGracia,concentracionTop2,tarifaPorMes,cumplimientoMensual,servicioDeudaMensual,frescuraFuentes,tractosParados30,flotaOperativa,pctOcupacionTractosOperativa,kmMesAnteriorCorte,topRutas,rutasDistintas,rutasViajesTotal,rutasKmTotal,concentracionTop5Rutas,topConductores,conductoresConViajes,kmPromedioConductor,conductoresBajaUtilizacion};
 }

@@ -18,6 +18,7 @@ import ContadorSinAccidentes from "../components/ContadorSinAccidentes.jsx";
 export default function OperacionesView({ C, T }) {
   const [monthRange, setMonthRange] = useState(12);
   const [searchCliente, setSearchCliente] = useState("");
+  const [searchCond, setSearchCond] = useState("");
   // Toggle: medir ocupación sobre la flota operativa (excluye tractos parados 30+
   // días, que en la práctica están fuera de servicio) en vez del padrón completo.
   const [soloOperativa, setSoloOperativa] = useState(false);
@@ -40,6 +41,10 @@ export default function OperacionesView({ C, T }) {
   const clientesFiltrados = searchCliente.trim()
     ? (C.topClientesViajesProy||[]).filter(c => c.name.toLowerCase().includes(searchCliente.toLowerCase()))
     : (C.topClientesViajesProy||[]);
+
+  const conductoresFiltrados = searchCond.trim()
+    ? (C.topConductores||[]).filter(c => c.conductor.toLowerCase().includes(searchCond.toLowerCase()))
+    : (C.topConductores||[]);
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
@@ -277,6 +282,71 @@ export default function OperacionesView({ C, T }) {
           })()}
         </SectionCard>
       </div>
+
+      <SectionCard title={`Rutas más operadas — ${C.curYear}`} icon={MapPin} T={T} color={T.teal}
+        action={
+          <div style={{fontSize:11,color:T.txM,fontWeight:600,textAlign:"right"}}>
+            {(C.rutasDistintas||0).toLocaleString("es-CL")} rutas{C.concentracionTop5Rutas!=null&&<> · top 5 = <span style={{color:T.teal,fontWeight:700}}>{C.concentracionTop5Rutas.toFixed(0)}%</span></>}
+          </div>
+        }>
+        <div style={{fontSize:11,color:T.txD,marginBottom:10,lineHeight:1.4}}>
+          Corredores (origen → destino) según los tramos <strong>con carga</strong> del año, ordenados por nº de viajes. El km y el km/viaje salen de la planilla de flota; cliente y carga muestran el dominante de cada ruta. (Los retornos vacíos no cuentan como ruta comercial.)
+        </div>
+        <div style={{overflowX:"auto",maxHeight:420,overflowY:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr>{["Ruta","Viajes","Km total","Km/viaje","Cliente princ.","Carga princ."].map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i===0||i>=4?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11,whiteSpace:"nowrap",position:"sticky",top:0,background:T.card}}>{h}</th>))}</tr></thead>
+            <tbody>
+              {(C.topRutas||[]).map((r,i)=>(
+                <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                  <td style={{padding:"7px 10px",color:T.tx,fontWeight:600,whiteSpace:"nowrap"}}>{r.ruta}</td>
+                  <td style={{padding:"7px 10px",textAlign:"right",color:T.tx,fontWeight:700}}>{r.viajes.toLocaleString("es-CL")}</td>
+                  <td style={{padding:"7px 10px",textAlign:"right",color:T.teal,fontWeight:600}}>{Math.round(r.km).toLocaleString("es-CL")}</td>
+                  <td style={{padding:"7px 10px",textAlign:"right",color:T.txM}}>{Math.round(r.kmProm).toLocaleString("es-CL")}</td>
+                  <td style={{padding:"7px 10px",color:T.txM,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.clientePrincipal}</td>
+                  <td style={{padding:"7px 10px",color:T.txD,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.cargaPrincipal}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+
+      <SectionCard title={`Productividad por conductor — ${C.curYear}`} icon={Users} T={T} color={T.violet}
+        action={
+          <div style={{fontSize:11,color:T.txM,fontWeight:600,textAlign:"right"}}>
+            {(C.conductoresConViajes||0).toLocaleString("es-CL")} con viajes · prom {Math.round(C.kmPromedioConductor||0).toLocaleString("es-CL")} km
+            {C.conductoresBajaUtilizacion>0&&<> · <span style={{color:T.amber,fontWeight:700}}>{C.conductoresBajaUtilizacion} bajo 50%</span></>}
+          </div>
+        }>
+        <div style={{fontSize:11,color:T.txD,marginBottom:10,lineHeight:1.4}}>
+          Km y tramos por conductor en el año (incluye reposicionamientos vacíos: son km realmente conducidos). El comodín "Transportes Bello" se excluye. Km en <span style={{color:T.amber,fontWeight:700}}>ámbar</span> = bajo la mitad del promedio.
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,background:T.bg3,borderRadius:8,padding:"6px 10px",border:`1px solid ${T.border}`}}>
+          <Search size={13} color={T.txD}/>
+          <input value={searchCond} onChange={e=>setSearchCond(e.target.value)} placeholder="Buscar conductor…" style={{background:"transparent",border:"none",outline:"none",color:T.tx,fontSize:12,flex:1,minWidth:0}}/>
+          {searchCond&&<button onClick={()=>setSearchCond("")} style={{background:"none",border:"none",color:T.txD,cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 2px"}}>×</button>}
+        </div>
+        <div style={{overflowX:"auto",maxHeight:420,overflowY:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr>{["Conductor","Tramos","Km año","Km/tramo","Últ. viaje"].map((h,i)=>(<th key={i} style={{padding:"8px 10px",textAlign:i===0?"left":"right",color:T.txM,fontWeight:600,borderBottom:`1px solid ${T.border}`,fontSize:11,whiteSpace:"nowrap",position:"sticky",top:0,background:T.card}}>{h}</th>))}</tr></thead>
+            <tbody>
+              {conductoresFiltrados.map((c,i)=>{
+                const baja=c.km<(C.kmPromedioConductor||0)*0.5;
+                const kmCol=baja?T.amber:(c.km>=(C.kmPromedioConductor||0)?T.violet:T.tx);
+                return(
+                  <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
+                    <td style={{padding:"7px 10px",color:T.tx,fontWeight:500,maxWidth:230,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.conductor}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:T.txM}}>{c.tramos.toLocaleString("es-CL")}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:kmCol,fontWeight:700}}>{Math.round(c.km).toLocaleString("es-CL")}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:T.txM}}>{Math.round(c.kmTramo).toLocaleString("es-CL")}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:c.diasSinViaje!=null&&c.diasSinViaje>=14?T.amber:T.txD,whiteSpace:"nowrap"}}>{c.ultimoLabel}{c.diasSinViaje!=null&&c.diasSinViaje>=7&&<span style={{fontSize:10,opacity:0.8}}> ({c.diasSinViaje}d)</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
 
       <DashboardLink T={T} color={T.green} colorBg={T.greenBg}
         url="https://dashboard-operaciones.vercel.app/"
