@@ -32,6 +32,20 @@ function cuotasLeasingPorPagar(fechaFin, diaVcto, hoy) {
   return count;
 }
 
+// Núcleo del nombre de un cliente: quita puntuación y palabras legales/genéricas
+// (S.A., SPA, LTDA, CHILE, …) para poder calzar el nombre corto de la planilla de
+// Viajes ("MAXAM") con la razón social completa de flotaViajes ("MAXAM CHILE S.A").
+const CLIENTE_LEGAL_TOKENS = new Set(["SA","S","A","SPA","LTDA","LTD","LIMITADA","SCM","EIRL","SAC","CHILE","CIA","COMPANIA","COMPAÑIA","SOCIEDAD","CONTRACTUAL","DE","DEL","LA","EL","Y","E"]);
+function clienteCoreTokens(name) {
+  return String(name||"").toUpperCase().replace(/[^A-ZÑ0-9 ]/g," ").split(/\s+/).filter(t => t && !CLIENTE_LEGAL_TOKENS.has(t));
+}
+// ¿Los tokens `a` son prefijo de los tokens `b`? ("MAXAM" ⊑ "MAXAM CHILE S.A").
+function tokensPrefix(a, b) {
+  if (a.length === 0 || a.length > b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 // Orquestador único del cómputo del dashboard. Recibe el objeto `data` con
 // las planillas crudas (ventas, viajes, finBancos, etc.) y devuelve TODAS las
 // métricas que las vistas consumen via la prop `C`. Es función pura: misma
@@ -718,6 +732,116 @@ export function computeAll(data) {
     }
   });
 
+  // ══════════ DIAGNÓSTICO DE ALERTAS POR CLIENTE ══════════
+  // Avisar la caída no basta: hay que sugerir SI es demanda del cliente o capacidad
+  // nuestra. Cruzamos dos señales de baja (semanal vs la propia norma reciente del
+  // cliente, y mensual vs proyección de cierre) con el estado de los tractos que lo
+  // atienden habitualmente. La causa es una HIPÓTESIS para orientar la conversación,
+  // no un dato confirmado: si el cliente baja y sus tractos están parados → probable
+  // problema nuestro; si bajan los viajes pero sus tractos siguen operando en otras
+  // rutas → probable menor demanda del cliente.
+  const finVentanaVj = new Date(ultimaFechaDatos);
+  if (ultimoDiaEnCurso) finVentanaVj.setDate(finVentanaVj.getDate() - 1);
+  const ini7Vj = new Date(finVentanaVj); ini7Vj.setDate(ini7Vj.getDate() - 6);
+  const win90Cli = new Date(ultimaFechaDatos); win90Cli.setDate(win90Cli.getDate() - 90);
+  const viajesMesActualCount = viajesMesActual.length;
+
+  // Pre-agrupar filas por cliente normalizado (recorrer 60k+ y 190k filas una vez,
+  // no por cada cliente del top).
+  const viajesPorCliente = {}, flotaPorCliente = {};
+  viajesRows.forEach(r => { const k = normClienteKey(r._cliente); if (k) (viajesPorCliente[k] || (viajesPorCliente[k] = [])).push(r); });
+  flotaRows.forEach(r => { const k = normClienteKey(r._cliente); if (k) (flotaPorCliente[k] || (flotaPorCliente[k] = [])).push(r); });
+  // El nombre del cliente difiere entre planillas (Viajes lo abrevia, flotaViajes
+  // trae la razón social). Resolvemos por núcleo de tokens: exacto, o el corto como
+  // prefijo del largo, o viceversa. Sin match → el diagnóstico de flota se omite.
+  const flotaClienteKeys = Object.keys(flotaPorCliente);
+  const flotaCoreMap = new Map(flotaClienteKeys.map(fk => [fk, clienteCoreTokens(fk)]));
+  const resolveFlotaKeys = (vKey) => {
+    const vc = clienteCoreTokens(vKey);
+    if (!vc.length) return [];
+    let m = flotaClienteKeys.filter(fk => { const fc = flotaCoreMap.get(fk); return fc.length === vc.length && tokensPrefix(vc, fc); }); if (m.length) return m;
+    m = flotaClienteKeys.filter(fk => tokensPrefix(vc, flotaCoreMap.get(fk))); if (m.length) return m;
+    m = flotaClienteKeys.filter(fk => tokensPrefix(flotaCoreMap.get(fk), vc)); if (m.length) return m;
+    return [];
+  };
+
+  const alertasClienteDiag = topClientesViajesProy.map(c => {
+    const k = normClienteKey(c.name);
+    const cliViajes = viajesPorCliente[k] || [];
+
+    // — Señal semanal: últimos 7 días cerrados vs norma por día de semana (6 sem) —
+    const porDiaKeyCli = {};
+    cliViajes.forEach(r => { const dk = dkey(r._date); porDiaKeyCli[dk] = (porDiaKeyCli[dk] || 0) + 1; });
+    const normaCli = Array(7).fill(0);
+    {
+      const muestras = Array.from({ length: 7 }, () => []);
+      for (let i = 1; i <= 42; i++) { const d = new Date(ultimaFechaDatos); d.setDate(d.getDate() - i); muestras[d.getDay()].push(porDiaKeyCli[dkey(d)] || 0); }
+      for (let w = 0; w < 7; w++) { let v = muestras[w]; if (v.length >= 4) v = [...v].sort((a, b) => a - b).slice(1); normaCli[w] = v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0; }
+    }
+    let viajes7d = 0, norma7d = 0;
+    for (let i = 0; i < 7; i++) { const d = new Date(finVentanaVj); d.setDate(d.getDate() - i); viajes7d += porDiaKeyCli[dkey(d)] || 0; norma7d += normaCli[d.getDay()]; }
+    // norma muy baja (<3 viajes/semana) → la señal porcentual es ruido, no la usamos.
+    const dropSemanal = norma7d >= 3 ? ((viajes7d - norma7d) / norma7d) * 100 : null;
+    const dropMensual = c.mesAnt > 0 ? pctChange(c.proyCierre, c.mesAnt) : null;
+
+    // — Días desde el último viaje del cliente —
+    let ultViajeCli = null;
+    cliViajes.forEach(r => { if (!ultViajeCli || r._date > ultViajeCli) ultViajeCli = r._date; });
+    const diasSinCliente = ultViajeCli ? Math.floor((finVentanaVj - ultViajeCli) / 86400000) : null;
+
+    // — Flota habitual: tractos del padrón con ≥2 viajes de este cliente en 90 días —
+    const cliFlota = resolveFlotaKeys(c.name).flatMap(fk => flotaPorCliente[fk] || []);
+    const tractoCountCli = {}; const tractoLast7Cli = new Set();
+    cliFlota.forEach(r => {
+      const t = normPat(r._tracto);
+      if (!t || t === comodinNorm || !padronTractoSet.has(t)) return;
+      if (r._date >= win90Cli && r._date <= ultimaFechaDatos) tractoCountCli[t] = (tractoCountCli[t] || 0) + 1;
+      if (r._date >= ini7Vj && r._date <= finVentanaVj) tractoLast7Cli.add(t);
+    });
+    const habitual = Object.entries(tractoCountCli).filter(([, n]) => n >= 2).map(([t]) => t);
+    const flotaHabitualN = habitual.length;
+    const habitualParados = habitual.filter(t => !tractosEnOperacionSet.has(t)).length;
+    const habitualActivos = flotaHabitualN - habitualParados;
+    const habitualSirviendoCli7d = habitual.filter(t => tractoLast7Cli.has(t)).length;
+    const habitualEnOtrasRutas = Math.max(0, habitualActivos - habitualSirviendoCli7d);
+    const paradosPct = flotaHabitualN > 0 ? habitualParados / flotaHabitualN : null;
+
+    // — Hipótesis de causa —
+    const evidencia = [];
+    let hip = null, hipTipo = null, sugerencia = null;
+    if (diasSinCliente != null && diasSinCliente >= 10) evidencia.push(`Sin viajes para este cliente hace ${diasSinCliente} días.`);
+    if (flotaHabitualN < 2) {
+      hip = "Sin diagnóstico de flota"; hipTipo = "neutro";
+      evidencia.push("Historial de equipos asignados insuficiente para inferir la causa.");
+      sugerencia = "Revisar con operaciones qué pasó con este cliente.";
+    } else {
+      evidencia.push(`${flotaHabitualN} tractos suelen atenderlo: ${habitualActivos} operativos, ${habitualParados} sin viaje en ${ventanaUtilDias} días.`);
+      if (paradosPct >= 0.4) {
+        hip = "Probable capacidad nuestra"; hipTipo = "nuestra";
+        sugerencia = "Revisar disponibilidad y mantención de los equipos de esta ruta.";
+        if (pctOcupacionTractos < UMBRAL_OCUPACION_ALERTA) evidencia.push(`Ocupación general de flota baja (${pctOcupacionTractos.toFixed(0)}%): refuerza que faltan equipos disponibles.`);
+      } else if (paradosPct <= 0.2) {
+        hip = "Probable demanda del cliente"; hipTipo = "cliente";
+        sugerencia = "Contactar al cliente: sus equipos están operativos, parece menor demanda.";
+        if (habitualEnOtrasRutas > 0) evidencia.push(`${habitualEnOtrasRutas} de sus tractos habituales están trabajando en otras rutas: había capacidad, bajó la carga.`);
+        else if (pctOcupacionTractos >= 80) evidencia.push(`Ocupación general alta (${pctOcupacionTractos.toFixed(0)}%): la flota está colocada en otros clientes.`);
+      } else {
+        hip = "Mixto — revisar"; hipTipo = "mixto";
+        sugerencia = "Señal no concluyente: confirmar con el cliente y con operaciones.";
+      }
+    }
+
+    // — Severidad: la peor de las dos señales, filtrada por materialidad —
+    const peso = viajesMesActualCount > 0 ? c.count / viajesMesActualCount : 0;
+    const drops = [dropSemanal, dropMensual].filter(x => x != null);
+    const caida = drops.length ? Math.min(...drops) : 0;
+    const material = c.mesAnt >= 15 || peso >= 0.08;
+    let nivel = null;
+    if (material) { if (caida <= -25) nivel = "rojo"; else if (caida <= -15) nivel = "amarillo"; }
+
+    return { name: c.name, peso, count: c.count, mesAnt: c.mesAnt, proyCierre: c.proyCierre, viajes7d, norma7d: Math.round(norma7d), dropSemanal, dropMensual, caida, nivel, hip, hipTipo, sugerencia, evidencia, flotaHabitualN, habitualActivos, habitualParados, habitualEnOtrasRutas, diasSinCliente };
+  }).filter(d => d.nivel).sort((a, b) => (a.nivel === b.nivel ? b.peso - a.peso : a.nivel === "rojo" ? -1 : 1));
+
   // ══════════ LEASING ══════════
   // La planilla trae columnas de cuotas pagadas / por pagar / deuda que son ESTÁTICAS
   // (se editan a mano y quedan desactualizadas, así que la deuda "no bajaba"). Aquí, por
@@ -875,5 +999,5 @@ export function computeAll(data) {
   const histRows=parseHistorico(data.historico);
   const comparativas=computeComparativas(histRows,now);
 
-  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,diasTranscurridosMes,diasTotalesMes,totalMesActualBruto,leasingDeudaTotalIVA,creditoMontoOriginal,creditoCuotasGracia,concentracionTop2,tarifaPorMes,cumplimientoMensual,servicioDeudaMensual,frescuraFuentes,tractosParados30,flotaOperativa,pctOcupacionTractosOperativa,kmMesAnteriorCorte,topRutas,rutasDistintas,rutasViajesTotal,rutasKmTotal,concentracionTop5Rutas,topConductores,conductoresConViajes,kmPromedioConductor,conductoresBajaUtilizacion};
+  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,alertasClienteDiag,diasTranscurridosMes,diasTotalesMes,totalMesActualBruto,leasingDeudaTotalIVA,creditoMontoOriginal,creditoCuotasGracia,concentracionTop2,tarifaPorMes,cumplimientoMensual,servicioDeudaMensual,frescuraFuentes,tractosParados30,flotaOperativa,pctOcupacionTractosOperativa,kmMesAnteriorCorte,topRutas,rutasDistintas,rutasViajesTotal,rutasKmTotal,concentracionTop5Rutas,topConductores,conductoresConViajes,kmPromedioConductor,conductoresBajaUtilizacion};
 }

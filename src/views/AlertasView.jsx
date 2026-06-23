@@ -1,13 +1,22 @@
+import DiagnosticoClientes from "../components/DiagnosticoClientes.jsx";
+
 export default function AlertasView({ C, T }) {
   const typeStyle = {
     danger: { bg:T.redBg, border:T.red, color:T.red },
     warning: { bg:T.amberBg, border:T.amber, color:T.amber },
     info: { bg:T.accentBg, border:T.accent, color:T.accent },
   };
+  const hayDiag = (C.alertasClienteDiag||[]).length > 0;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
       <h2 style={{fontSize:20,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>Alertas</h2>
+
+      {hayDiag && <DiagnosticoClientes data={C.alertasClienteDiag} T={T} />}
+
+      {hayDiag && (
+        <h3 style={{fontSize:14,fontWeight:700,color:T.txM,letterSpacing:-0.2,marginTop:4}}>Otras alertas</h3>
+      )}
 
       {C.alertas?.length===0&&(
         <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:12,padding:20,textAlign:"center"}}>
