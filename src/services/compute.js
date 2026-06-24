@@ -179,15 +179,16 @@ export function computeAll(data) {
     }
   }
 
-  // ── Uplift OBSERVADO vs teórico ──
-  // El uplift teórico (mapa de reajustes × mix de clientes) supone que el alza se
-  // factura completa. Los meses ya CERRADOS post-reajuste dicen cuánto se
-  // materializó de verdad: se compara lo facturado contra el contrafactual
-  // "mismo mes del año anterior × crecimiento de los meses PRE-reajuste".
-  // Para PROYECTAR se usa el MENOR entre teórico y observado (acotado a ≥0):
-  // prudente, y se corrige solo a medida que cierran más meses. Para AUDITAR
-  // meses pasados (tabla de cumplimiento) se mantiene el teórico: si el reajuste
-  // pactado no aparece en la facturación, eso es justamente lo que hay que ver.
+  // ── Uplift OBSERVADO (solo informativo) ──
+  // El uplift teórico (mapa de reajustes × mix de clientes) es el alza CONTRATADA.
+  // El "observado" compara lo facturado post-reajuste contra el contrafactual
+  // "mismo mes del año anterior × crecimiento de los meses PRE-reajuste"; se
+  // calcula SOLO para mostrarlo en el banner (referencia de cuánto se ha
+  // materializado a la fecha). YA NO acota la proyección: el alza es contractual
+  // y sigue vigente, y un déficit de facturación es lag (facturación pendiente),
+  // no alza inexistente — eso se vigila en la tabla de cumplimiento, no se
+  // descuenta de la proyección. Alinea con dashboard-ventas, que proyecta el alza
+  // completa.
   const mesesPreCerrados = closedMonths.filter(m=>m<MEPCO_ADJUSTMENT_MONTH);
   const mesesPostCerrados = curYear===MEPCO_ADJUSTMENT_YEAR ? closedMonths.filter(m=>m>=MEPCO_ADJUSTMENT_MONTH) : [];
   let upliftObservado = null;
@@ -201,10 +202,11 @@ export function computeAll(data) {
       upliftObservado=actPost/(antPost*growthPre)-1;
     }
   }
+  // La proyección estacional usa el uplift TEÓRICO (alza vigente), igual que
+  // "por viajes" y que dashboard-ventas. Sin tope al observado.
   const upliftProyPorMes={};
   for(let m=1;m<=12;m++){
-    const teo=upliftPorMes[m]||0;
-    upliftProyPorMes[m]=upliftObservado==null?teo:Math.min(teo,Math.max(0,upliftObservado));
+    upliftProyPorMes[m]=upliftPorMes[m]||0;
   }
 
   let projSeasonal = 0;

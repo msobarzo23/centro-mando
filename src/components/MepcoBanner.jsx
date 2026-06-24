@@ -43,7 +43,7 @@ export default function MepcoBanner({ T, year, lastMonth, compact = false, proje
           <div style={{marginTop:8,padding:"10px 12px",background:`${T.bg3}66`,borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
             <div style={{color:T.tx,fontWeight:600,marginBottom:4}}>Cómo se aplica:</div>
             <div>• <b>Datos reales</b>: las facturas desde mayo ya vienen con tarifa nueva — no se modifican.</div>
-            <div>• <b>Proyección estacional</b>: a los meses no facturados les aplica el MENOR entre el uplift teórico (mix de clientes) y el observado en los meses ya cerrados post-reajuste — prudente, se ajusta solo al cerrar cada mes.</div>
+            <div>• <b>Proyección estacional</b>: a los meses no facturados les aplica el uplift teórico (mix de clientes) — el alza contratada vigente. El observado en meses cerrados se muestra como referencia, pero no recorta la proyección; un déficit de facturación se vigila en la tabla de cumplimiento.</div>
             <div>• <b>KPI Impacto MEPCO</b>: calcula el monto atribuible al reajuste por cada factura post-mayo (neto × pct/(1+pct)).</div>
             <div>• <b>Casos especiales</b>: DYNO Nobel, MAXAM Nacional y Orica con transición mes a mes hasta entrar a su polinomio de contrato.</div>
           </div>
