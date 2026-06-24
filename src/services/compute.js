@@ -349,13 +349,16 @@ export function computeAll(data) {
     viajesRows.forEach(r=>{if(r._date.getFullYear()!==vYear||r._date.getMonth()!==vMonth)return;const k=normClienteKey(r._cliente);if(!k)return;viajesMesCliente[k]=(viajesMesCliente[k]||0)+1;});
     let totalProy=0; const desglose=[];
     Object.entries(viajesMesCliente).forEach(([k,count])=>{const t=tasaPorCliente[k];const tasa=(t&&t.tasa)||tasaGlobal;const aporte=count*tasa;totalProy+=aporte;desglose.push({cliente:k,viajes:count,tasa,aporte,confianza:t?t.confianza:"global"});});
-    // Uplift MEPCO: las tasas vienen del año previo (pre-reajuste). Para meses con
-    // alza vigente, aplicar el mismo uplift ponderado por mix de clientes que usa
-    // la proyección estacional, así "Por viajes" queda comparable con "Falta facturar mes".
-    // Meses pasados (auditoría de cumplimiento): uplift TEÓRICO — si el reajuste
-    // pactado no aparece en lo facturado, eso es lo que la tabla debe detectar.
-    // Mes en curso y futuros (proyección): uplift acotado por el observado.
-    const upliftMes = (mF >= curMonth ? upliftProyPorMes[mF] : upliftPorMes[mF]) || 0;
+    // Uplift MEPCO: las tasas vienen del año previo (pre-reajuste). "Esperado por
+    // viajes" = viajes × TARIFA CONTRATADA, y la tarifa contratada incluye el
+    // reajuste vigente (el alza es contractual y no se ha revertido). Por eso se
+    // usa SIEMPRE el uplift teórico, igual en meses cerrados, en curso y futuros.
+    // Si la facturación queda corta frente a esto, eso es facturación pendiente
+    // (posibles viajes sin facturar) y se refleja como DESVÍO en la tabla de
+    // meses cerrados — no se descuenta de la expectativa. Acotarlo al "observado"
+    // de un solo mes cerrado (mayo) lo contamina con el lag de facturación y
+    // contradice esa misma lectura de "viajes sin facturar".
+    const upliftMes = upliftPorMes[mF] || 0;
     facturacionProyViajesSinMepco[mF]=totalProy;
     if (upliftMes > 0) {
       totalProy = totalProy * (1 + upliftMes);
