@@ -8,7 +8,7 @@ export default function KpiCard({ icon:Icon, label, value, sub, color, colorBg, 
       className="kpi-card"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{background:T.card,borderRadius:14,padding:"16px 18px",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",gap:8,minWidth:0,flex:"1 1 160px",position:"relative",overflow:"visible",cursor:tooltip?"help":"default"}}
+      style={{background:T.card,borderRadius:14,padding:"16px 18px",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",gap:8,minWidth:0,flex:"1 1 160px",position:"relative",overflow:"visible",cursor:tooltip?"help":"default",zIndex:(tooltip&&hover)?100:undefined}}
     >
       <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg, ${color}, transparent 70%)`,borderRadius:"14px 14px 0 0"}}/>
       <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"space-between"}}>
