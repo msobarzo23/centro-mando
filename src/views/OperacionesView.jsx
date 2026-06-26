@@ -1,13 +1,13 @@
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, Legend,
+  CartesianGrid, Legend, Cell,
 } from "recharts";
 import { useState } from "react";
 import {
-  Truck, Activity, BarChart3, MapPin, Target, Users, AlertTriangle, FileSpreadsheet, Search,
+  Truck, Activity, BarChart3, MapPin, Target, Users, AlertTriangle, FileSpreadsheet, Search, Coins,
 } from "lucide-react";
 import { MESES, MESES_FULL } from "../constants.js";
-import { fmtM, fmtPct, fmtPctArrow, pctChange, occColor, occBg } from "../utils.js";
+import { fmtM, fmtFull, fmtPct, fmtPctArrow, pctChange, occColor, occBg } from "../utils.js";
 import KpiCard from "../components/KpiCard.jsx";
 import SectionCard from "../components/SectionCard.jsx";
 import ChartTooltip from "../components/ChartTooltip.jsx";
@@ -45,6 +45,11 @@ export default function OperacionesView({ C, T }) {
   const conductoresFiltrados = searchCond.trim()
     ? (C.topConductores||[]).filter(c => c.conductor.toLowerCase().includes(searchCond.toLowerCase()))
     : (C.topConductores||[]);
+
+  // Generación por camión: solo meses ya transcurridos (con venta). El mes en curso
+  // va parcial y se pinta aparte para que no se lea como un mes flojo.
+  const genChartData = (C.genPorCamionPorMes||[]).filter(g=>g.ventas>0).map(g=>({mes:g.mes,valor:g.valor,enCurso:g.enCurso,camiones:g.camiones}));
+  const genTrend = (C.genPorCamionPorMes||[]).filter(g=>g.cerrado&&g.valor!=null).map(g=>g.valor);
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
@@ -120,6 +125,48 @@ export default function OperacionesView({ C, T }) {
         <OccupationBar label={`Despachos por día — ${MESES_FULL[C.curMonth]} (promedio)${soloOperativa?" — sobre flota operativa":""}`} activos={C.tractosDespachadosDia||0} total={flotaBase} T={T}/>
         <div style={{marginTop:8,fontSize:11,color:T.txD,display:"flex",alignItems:"center",gap:6}}><AlertTriangle size={12}/> La barra de operación mide cuántos tractos movieron carga en la ventana; los despachos/día son cuántos salen en promedio (un tracto en ruta de 2 días sale 1 vez pero ocupa 2).{soloOperativa&&<> · Flota operativa: {C.flotaOperativa} de {C.totalTractocamiones} (excluye {C.tractosParados30} parados ≥30 días).</>}</div>
       </SectionCard>
+
+      {(C.genMesesCerradosN>0)&&(
+        <>
+          <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+            <KpiCard icon={Coins} label="Genera un camión / mes" value={fmtM(C.genPorCamionMensual)} T={T}
+              sub={`Prom. de ${C.genMesesCerradosN} ${C.genMesesCerradosN===1?"mes cerrado":"meses cerrados"} · ~${C.camionesOperativosProm} camiones activos/mes`}
+              color={T.green} colorBg={T.greenBg} badge="POR CAMIÓN"
+              trend={genTrend.length>=2?genTrend:undefined} trendLabel="$/camión por mes"
+              tooltip={<div>
+                <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Cómo se calcula</div>
+                <div style={{fontSize:11,color:T.tooltipTx,opacity:0.85,lineHeight:1.5}}>
+                  Facturación neta del mes ÷ los tractocamiones que hicieron al menos un viaje ese mes (los que de verdad trabajaron; los parados no entran al divisor). Se promedian solo los meses cerrados, porque el mes en curso va parcial. Es el promedio de la flota activa, no el detalle por patente.
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:8}}><span>Por camión / mes</span><strong>{fmtFull(C.genPorCamionMensual)}</strong></div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Equivalente al año</span><strong>{fmtFull(C.genPorCamionAnual)}</strong></div>
+              </div>}
+            />
+            <KpiCard icon={Coins} label="Equivalente al año" value={fmtM(C.genPorCamionAnual)} T={T}
+              sub="Ritmo anualizado (mensual × 12)" color={T.teal} colorBg={T.tealBg}/>
+            <KpiCard icon={Coins} label={`Acumulado ${C.curYear} / camión`} value={fmtM(C.genPorCamionYTD)} T={T}
+              sub={`Generado por camión en ${C.genMesesCerradosN} ${C.genMesesCerradosN===1?"mes":"meses"} cerrados`} color={T.accent} colorBg={T.accentBg}/>
+          </div>
+
+          <SectionCard title="Generación por camión por mes" icon={Coins} T={T} color={T.green}
+            action={C.genPorCamionMesEnCurso&&<div style={{fontSize:11,color:T.txM,fontWeight:600,textAlign:"right"}}>{MESES[C.curMonth]} a la fecha: <span style={{color:T.amber,fontWeight:700}}>{fmtM(C.genPorCamionMesEnCurso.valor)}</span> · {C.genPorCamionMesEnCurso.camiones} camiones</div>}>
+            <div style={{fontSize:11,color:T.txD,marginBottom:10,lineHeight:1.4}}>
+              Facturación neta de cada mes repartida entre los tractocamiones que <strong>sí trabajaron</strong> ese mes (al menos un viaje). Es un promedio de la flota activa, no el detalle por patente. El mes en curso (<span style={{color:T.amber,fontWeight:700}}>ámbar</span>) va parcial y no se compara igual.
+            </div>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={genChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+                <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false} width={52} tickFormatter={v=>fmtM(v)}/>
+                <Tooltip content={<ChartTooltip T={T} prefix="$" extraRow={(payload)=>{const p=payload?.[0]?.payload;return p?<div style={{marginTop:4,paddingTop:4,borderTop:`1px solid ${T.border}`,color:T.txM,fontSize:11}}>{p.camiones} camiones activos{p.enCurso?" · mes en curso (parcial)":""}</div>:null;}}/>}/>
+                <Bar dataKey="valor" name="Por camión" radius={[4,4,0,0]}>
+                  {genChartData.map((d,i)=><Cell key={i} fill={d.enCurso?T.amber:T.green} fillOpacity={d.enCurso?0.55:1}/>)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </SectionCard>
+        </>
+      )}
 
       {(C.tractosParadosLista?.length>0)&&(
         <SectionCard title={`Tractos sin viajes — ${C.tractosParadosLista.length} parados`} icon={Truck} T={T} color={T.red}>
