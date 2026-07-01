@@ -49,7 +49,8 @@ export const themes = {
     chart:["#3b82f6","#22c55e","#f59e0b","#ef4444","#a855f7","#14b8a6","#ec4899","#6366f1"],
   },
   light: {
-    bg:"#f0f4f8",bg2:"#ffffff",bg3:"#e2e8f0",card:"#ffffff",tx:"#0f172a",txM:"#475569",txD:"#94a3b8",
+    // txD oscurecido: #94a3b8 sobre blanco daba ~2.4:1 de contraste (ilegible).
+    bg:"#f0f4f8",bg2:"#ffffff",bg3:"#e2e8f0",card:"#ffffff",tx:"#0f172a",txM:"#475569",txD:"#64748b",
     border:"#e2e8f0",accent:"#2563eb",accentBg:"rgba(37,99,235,0.08)",green:"#16a34a",greenBg:"rgba(22,163,74,0.08)",
     red:"#dc2626",redBg:"rgba(220,38,38,0.08)",amber:"#d97706",amberBg:"rgba(217,119,6,0.08)",
     purple:"#9333ea",purpleBg:"rgba(147,51,234,0.08)",teal:"#0d9488",tealBg:"rgba(13,148,136,0.08)",

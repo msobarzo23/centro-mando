@@ -198,7 +198,10 @@ export default function SimulacionCreditoView({ C, T }) {
   const { page, setPage, totalPages, pageItems } = usePagination(calc.filas, 12);
 
   // Capacidad de pago: ¿cabe la cuota en el margen mensual estimado de la empresa?
-  const margen = C?.margenMesEstimado ?? null;
+  // Usa la variante CAJA (mes cerrado): la otra depende del día del mes (a inicio
+  // de mes es negativa por construcción) y el veredicto cambiaba según cuándo se
+  // abriera el simulador.
+  const margen = C?.margenMesEstimadoCaja ?? null;
   const pctMargen = margen && margen > 0 ? (calc.cuota / margen) * 100 : null;
 
   // Datos para el gráfico de evolución del saldo.
@@ -353,7 +356,7 @@ export default function SimulacionCreditoView({ C, T }) {
               <Wallet size={15} color={pctMargen <= 100 ? T.green : T.red} style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ fontSize: 11.5, color: T.txM, lineHeight: 1.6 }}>
                 <strong style={{ color: T.tx }}>Capacidad de pago:</strong> esta cuota de <strong style={{ color: T.tx }}>{fmtM(calc.cuota)}</strong> equivale al{" "}
-                <strong style={{ color: pctMargen <= 100 ? T.green : T.red }}>{pctMargen.toLocaleString("es-CL", { maximumFractionDigits: 0 })}%</strong> del margen mensual estimado de la empresa ({fmtM(margen)}, lo que queda después de gastos, leasing y el crédito Itaú actual).
+                <strong style={{ color: pctMargen <= 100 ? T.green : T.red }}>{pctMargen.toLocaleString("es-CL", { maximumFractionDigits: 0 })}%</strong> del margen mensual estimado de la empresa ({fmtM(margen)}, facturación del último mes cerrado menos gastos, leasing y el crédito Itaú actual).
                 {pctMargen <= 100 ? " Holgura suficiente según el ritmo actual." : " Excede el margen estimado: requeriría recortar otros pagos o subir la facturación."}
               </div>
             </div>

@@ -32,8 +32,10 @@ export default function ContadorSinAccidentes({ C, T, variant = "hero" }) {
   }, []);
 
   // Sin reinicio manual, el contador parte el 1 de enero del año en curso.
+  // Con reinicio manual (fecha de un accidente), los km de ESE día no cuentan
+  // como "sin accidentes": el conteo parte del día siguiente.
   const efectiva = reset || `${C.curYear}-01-01`;
-  const km = (C.kmPorDia || []).filter(r => r.fecha >= efectiva).reduce((s, r) => s + r.km, 0);
+  const km = (C.kmPorDia || []).filter(r => (reset ? r.fecha > efectiva : r.fecha >= efectiva)).reduce((s, r) => s + r.km, 0);
   const kmTxt = Math.round(km).toLocaleString("es-CL");
 
   const guardar = useCallback((iso) => {

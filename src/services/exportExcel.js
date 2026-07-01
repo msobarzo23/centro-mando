@@ -1,5 +1,4 @@
 import * as XLSX from "xlsx";
-import { pctChange } from "../utils.js";
 
 function sheet(headers, rows) {
   return XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -15,11 +14,13 @@ export function exportVentasExcel(C) {
 
   XLSX.utils.book_append_sheet(wb, sheet(
     ["Mes", String(C.curYear), String(C.prevYear), "Var %"],
+    // m.var_pct es el MISMO número que muestra la pantalla (compute.js); si se
+    // recalcula acá con otras reglas, el Excel y el dashboard divergen.
     (C.ventasPorMesComparado || []).map(m => [
       m.mes,
       m.actual || 0,
       m.anterior || 0,
-      m.anterior > 0 && m.actual > 0 ? parseFloat(pctChange(m.actual, m.anterior).toFixed(1)) : "",
+      m.actual > 0 || m.anterior > 0 ? parseFloat(m.var_pct.toFixed(1)) : "",
     ])
   ), "Por Mes");
 
@@ -70,7 +71,9 @@ export function exportFinanzasExcel(C) {
       r.banco,
       r.monto,
       r.montoFinal,
-      r.montoFinal - r.monto,
+      // La misma Ganancia de la planilla que muestra la pantalla; el cálculo
+      // final−inicial solo como respaldo si la celda viene vacía.
+      r.ganancia || (r.montoFinal - r.monto),
       r.vencimiento ? r.vencimiento.toLocaleDateString("es-CL") : "",
       r._tipoNorm || r.tipo,
     ])

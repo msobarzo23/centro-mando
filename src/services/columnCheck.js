@@ -1,6 +1,7 @@
 // Verifica que cada planilla CSV traiga las columnas críticas.
 // Acepta alternativas por columna (ej. "FECHA" o "fecha"); basta que aparezca una.
-// Si una planilla está vacía no la reporta — eso lo cubre el banner global de fetchError.
+// Si una planilla está vacía no la reporta — eso lo cubre el aviso por-planilla
+// de App.jsx (planillas que llegan vacías se listan y se conservan los datos previos).
 
 const normalize = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -81,7 +82,7 @@ export const EXPECTED = {
   },
 };
 
-const LABELS = {
+export const LABELS = {
   ventas: "Ventas",
   viajes: "Viajes",
   flotaViajes: "Flota — viajes",

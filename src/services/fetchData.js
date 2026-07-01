@@ -29,11 +29,15 @@ export const fetchFinCSV = (url, knownHeaders) => new Promise((resolve) => {
         // Estas pestañas apilan VARIAS tablas en una sola hoja (p. ej. la de fondos
         // trae "SALDOS VIGENTES" y, más abajo, "HISTORIAL DE VALORES"). Solo nos
         // interesa la primera tabla. Una fila-título que abre la siguiente sección
-        // tiene texto SOLO en la primera celda (el resto vacío) y no es un número;
-        // al detectarla cortamos, para no arrastrar filas de otras tablas que
-        // comparten columnas y se sumarían dos veces.
+        // tiene texto SOLO en la primera celda (el resto vacío) y PARECE TÍTULO
+        // (tiene letras y ninguna minúscula: "HISTORIAL DE VALORES", "2. RESUMEN").
+        // Antes se cortaba con cualquier texto no numérico en la primera celda, y
+        // una fila de datos a medio digitar ("Bello,,,…") truncaba la tabla entera;
+        // y un título que empezara con número ("2026 RESUMEN") NO cortaba y sumaba
+        // dos veces las filas de la tabla siguiente.
         const filled = row.map((c, ci) => ({ ci, v: String(c == null ? "" : c).trim() })).filter(x => x.v !== "");
-        if (filled.length === 1 && filled[0].ci === 0 && parseNum(filled[0].v) === 0) break;
+        const esTitulo = (v) => /[A-ZÁÉÍÓÚÑ]/.test(v) && !/[a-záéíóúñ]/.test(v);
+        if (filled.length === 1 && filled[0].ci === 0 && esTitulo(filled[0].v)) break;
         // Filas de totales ("TOTALES", "TOTALES ACTIVOS", …) NO son datos: si entran,
         // los montos se cuentan dos veces. Hoy las neutralizan filtros aguas abajo
         // (Vigente/fecha/Estado), pero eso es frágil — se excluyen acá en el origen.

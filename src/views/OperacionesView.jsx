@@ -34,9 +34,11 @@ export default function OperacionesView({ C, T }) {
     real: m.total,
     proyectado: i===C.curMonth ? (C.viajesProyectadosFaltantes||0) : null,
   }));
+  // El rango 3m/6m recorta también el FINAL: sin el segundo argumento se
+  // mostraban además todos los meses futuros vacíos hasta diciembre.
   const viajesChartData = monthRange >= 12
     ? viajesChartAll
-    : viajesChartAll.slice(Math.max(0, C.curMonth - monthRange + 1));
+    : viajesChartAll.slice(Math.max(0, C.curMonth - monthRange + 1), C.curMonth + 1);
 
   const clientesFiltrados = searchCliente.trim()
     ? (C.topClientesViajesProy||[]).filter(c => c.name.toLowerCase().includes(searchCliente.toLowerCase()))
@@ -63,7 +65,7 @@ export default function OperacionesView({ C, T }) {
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={Truck} label={`Viajes ${MESES[C.curMonth]} (en curso)`} value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={`Proy. ${C.proyViajesHibrido?.toLocaleString("es-CL")} al cierre (${fmtPct(varProyVsAnt)} vs mes ant.)`} color={varProyVsAnt>=0?T.green:T.red} colorBg={varProyVsAnt>=0?T.greenBg:T.redBg}/>
         <KpiCard icon={Activity} label={`Corte al día ${C.dayOfMonth}`} value={C.viajesCorteActual?.toLocaleString("es-CL")} T={T} sub={`${C.viajesCorteAnterior} mes ant. (${fmtPct(varCorte)})`} color={varCorte>=0?T.green:T.red} colorBg={varCorte>=0?T.greenBg:T.redBg}/>
-        <KpiCard icon={BarChart3} label={`Viajes ${C.lastFullDayLabel}`} value={C.viajesAyer?.toLocaleString("es-CL")} T={T} sub="Último día completo" color={T.accent} colorBg={T.accentBg}/>
+        <KpiCard icon={BarChart3} label={`Viajes ${C.viajesAyerLabel||C.lastFullDayLabel}`} value={C.viajesAyer?.toLocaleString("es-CL")} T={T} sub="Último día completo" color={T.accent} colorBg={T.accentBg}/>
         <KpiCard icon={MapPin} label="KM mes actual" value={C.kmMesActual?.toLocaleString("es-CL")} T={T} sub={C.kmMesAnteriorCorte>0?fmtPct(pctChange(C.kmMesActual,C.kmMesAnteriorCorte))+" vs mismo corte mes ant.":undefined} color={T.teal} colorBg={T.tealBg}/>
         <KpiCard
           icon={Target} label={`Proy. cierre ${MESES[C.curMonth]}`} value={C.proyViajesHibrido?.toLocaleString("es-CL")} T={T}
@@ -107,7 +109,7 @@ export default function OperacionesView({ C, T }) {
             <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Sin viaje en {C.ventanaUtilDias||7} días</span><strong>{C.tractosParados}</strong></div>
           </div>}
         />
-        <KpiCard icon={Truck} label="Despachos/día (prom.)" value={String(C.tractosDespachadosDia||0)} T={T} sub={`${C.pctDespachadosDia?.toFixed(1)}% de la flota sale por día · ${C.diasConDatosTractos||0} días cerrados · ${C.tractosUnicosMes||0} distintos en el mes`} color={T.teal} colorBg={T.tealBg}/>
+        <KpiCard icon={Truck} label={`Despachos/día (prom. ${C.despachosMesLabel||MESES[C.curMonth]})`} value={String(C.tractosDespachadosDia||0)} T={T} sub={`${C.pctDespachadosDia?.toFixed(1)}% de la flota sale por día · ${C.diasConDatosTractos||0} días cerrados · ${C.tractosUnicosMes||0} distintos en el mes`} color={T.teal} colorBg={T.tealBg}/>
       </div>
 
       <SectionCard title="Ocupación de recursos" icon={Target} T={T} color={T.accent}
@@ -122,7 +124,7 @@ export default function OperacionesView({ C, T }) {
         }>
         <OccupationBar label="Conductores en expedición" activos={C.totalEnExpedicion||0} total={C.totalContratados||0} T={T}/>
         <OccupationBar label={`Flota en operación (últimos ${C.ventanaUtilDias||7} días)${soloOperativa?" — sobre flota operativa":""}`} activos={C.tractosEnOperacion||0} total={flotaBase} T={T}/>
-        <OccupationBar label={`Despachos por día — ${MESES_FULL[C.curMonth]} (promedio)${soloOperativa?" — sobre flota operativa":""}`} activos={C.tractosDespachadosDia||0} total={flotaBase} T={T}/>
+        <OccupationBar label={`Despachos por día — ${C.despachosMesLabel||MESES_FULL[C.curMonth]} (promedio)${soloOperativa?" — sobre flota operativa":""}`} activos={C.tractosDespachadosDia||0} total={flotaBase} T={T}/>
         <div style={{marginTop:8,fontSize:11,color:T.txD,display:"flex",alignItems:"center",gap:6}}><AlertTriangle size={12}/> La barra de operación mide cuántos tractos movieron carga en la ventana; los despachos/día son cuántos salen en promedio (un tracto en ruta de 2 días sale 1 vez pero ocupa 2).{soloOperativa&&<> · Flota operativa: {C.flotaOperativa} de {C.totalTractocamiones} (excluye {C.tractosParados30} parados ≥30 días).</>}</div>
       </SectionCard>
 
@@ -273,15 +275,17 @@ export default function OperacionesView({ C, T }) {
           {(()=>{
             const filas=(C.viajesPorMesComparado||[]).filter(m=>m.actual>0||m.anterior>0);
             if(filas.length===0)return null;
-            // El total compara solo los meses que ya tienen viajes este ano,
-            // para no castigar el acumulado con meses futuros aun sin datos.
-            const mesesConViajes=filas.filter(m=>m.actual>0);
-            const totActual=mesesConViajes.reduce((s,m)=>s+m.actual,0);
-            const totAnterior=mesesConViajes.reduce((s,m)=>s+m.anterior,0);
+            // El total compara solo los meses CERRADOS de este año: los futuros
+            // no tienen datos y el mes en curso va parcial — ambos castigaban
+            // el acumulado con un -% que no significa nada.
+            const mesEnCursoLbl=MESES[C.curMonth];
+            const mesesCerrados=filas.filter(m=>m.actual>0&&m.mes!==mesEnCursoLbl);
+            const totActual=mesesCerrados.reduce((s,m)=>s+m.actual,0);
+            const totAnterior=mesesCerrados.reduce((s,m)=>s+m.anterior,0);
             const totDif=totActual-totAnterior;
             const totPct=totAnterior>0?pctChange(totActual,totAnterior):0;
-            const primerMes=mesesConViajes[0]?.mes, ultimoMes=mesesConViajes[mesesConViajes.length-1]?.mes;
-            const rango=mesesConViajes.length>0?(primerMes===ultimoMes?primerMes:`${primerMes}–${ultimoMes}`):"";
+            const primerMes=mesesCerrados[0]?.mes, ultimoMes=mesesCerrados[mesesCerrados.length-1]?.mes;
+            const rango=mesesCerrados.length>0?(primerMes===ultimoMes?primerMes:`${primerMes}–${ultimoMes} (cerrados)`):"";
             const cellR={padding:"6px 10px",textAlign:"right",fontSize:11};
             return (
               <div style={{overflowX:"auto",marginTop:12}}>
@@ -297,13 +301,19 @@ export default function OperacionesView({ C, T }) {
                       const dif=m.actual-m.anterior;
                       const col=dif>=0?T.green:T.red;
                       const sinDato=m.actual===0; // mes aun no transcurrido este ano
+                      // El mes en curso va parcial: compararlo contra el mes
+                      // completo del año pasado siempre da un rojo alarmante.
+                      const enCurso=m.mes===mesEnCursoLbl&&m.actual>0;
                       return(
                         <tr key={i} style={{borderBottom:`1px solid ${T.border}22`}}>
-                          <td style={{padding:"6px 10px",color:T.tx,fontWeight:500}}>{m.mes}</td>
+                          <td style={{padding:"6px 10px",color:T.tx,fontWeight:500}}>{m.mes}{enCurso&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:999,background:T.amberBg,color:T.amber}}>EN CURSO</span>}</td>
                           <td style={{...cellR,color:T.txD}}>{m.anterior.toLocaleString("es-CL")}</td>
                           <td style={{...cellR,color:sinDato?T.txD:T.tx,fontWeight:600}}>{sinDato?"—":m.actual.toLocaleString("es-CL")}</td>
-                          <td style={{...cellR,color:sinDato?T.txD:col,fontWeight:700}}>
-                            {sinDato?"—":<>
+                          <td style={{...cellR,color:sinDato||enCurso?T.txD:col,fontWeight:700}} title={enCurso?"Mes en curso: la diferencia contra el mes completo del año pasado es solo referencial":undefined}>
+                            {sinDato?"—":enCurso?<>
+                              ({dif>=0?"+":""}{dif.toLocaleString("es-CL")})
+                              <div style={{fontSize:11,fontWeight:600}}>parcial</div>
+                            </>:<>
                               {dif>=0?"+":""}{dif.toLocaleString("es-CL")}
                               {m.anterior>0&&<div style={{fontSize:11,fontWeight:600}}>{fmtPct(m.var_pct)}</div>}
                             </>}

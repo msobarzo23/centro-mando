@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { pctChange, parseDate, todayMidnight } from "../utils.js";
+import { parseDate, todayMidnight } from "../utils.js";
 
 const BLUE = [37, 99, 235];
 const GRAY_TEXT = "#64748b";
@@ -12,9 +12,13 @@ function fmtCLP(val) {
   if (val === null || val === undefined || val === "") return "—";
   const n = Number(val);
   if (isNaN(n)) return "—";
-  if (Math.abs(n) >= 1e9) return `$${(n / 1e9).toFixed(2)}MM`;
-  if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
-  return `$${n.toLocaleString("es-CL")}`;
+  // Mismo formato que la pantalla (utils.fmtM): millones con separador de
+  // miles y sufijo "M". Antes el PDF usaba "MM" para miles de millones y el
+  // mismo monto se leía distinto en pantalla y en papel.
+  const abs = Math.abs(n), sign = n < 0 ? "-" : "";
+  if (abs >= 1e9) return `${sign}$${(abs / 1e6).toLocaleString("es-CL", { maximumFractionDigits: 0 })}M`;
+  if (abs >= 1e6) return `${sign}$${Math.round(abs / 1e6).toLocaleString("es-CL")}M`;
+  return `${sign}$${Math.round(abs).toLocaleString("es-CL")}`;
 }
 
 function addPageHeader(doc, section, dateStr) {
@@ -114,7 +118,8 @@ export function exportFullPDF(C) {
     body: [
       [`${C.curYear}`, ...meses.map(m => m.actual > 0 ? fmtCLP(m.actual) : "—")],
       [`${C.prevYear}`, ...meses.map(m => m.anterior > 0 ? fmtCLP(m.anterior) : "—")],
-      ["Var %", ...meses.map(m => m.anterior > 0 && m.actual > 0 ? `${pctChange(m.actual, m.anterior).toFixed(1)}%` : "—")],
+      // var_pct viene de compute.js: el mismo número que muestra la pantalla.
+      ["Var %", ...meses.map(m => m.actual > 0 || m.anterior > 0 ? `${m.var_pct.toFixed(1)}%` : "—")],
     ],
     columnStyles: { 0: { fontStyle: "bold", fillColor: ROW_HEAD } },
   });

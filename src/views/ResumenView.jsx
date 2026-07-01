@@ -22,7 +22,9 @@ export default function ResumenView({ C, T, setTab }) {
 
   const margen = C.margenMesEstimadoCaja || 0;
   const margenPositivo = margen >= 0;
-  const varVentas = C.totalMesAnterior > 0 ? pctChange(C.totalMesActual, C.totalMesAnterior) : null;
+  // Mes en curso vs mes anterior AL MISMO DÍA (mes parcial vs mes completo
+  // siempre daba un -% alarmante sin significado).
+  const varVentas = C.totalMesAnteriorCorte > 0 ? pctChange(C.totalMesActual, C.totalMesAnteriorCorte) : null;
   const mesAnt = C.curMonth === 0 ? 11 : C.curMonth - 1;
 
   const alertas = (C.alertas || []);
@@ -58,8 +60,8 @@ export default function ResumenView({ C, T, setTab }) {
           <h2 style={{fontSize:16,fontWeight:700,color:T.tx,margin:0,letterSpacing:-0.3}}>¿Estamos ganando plata?</h2>
         </div>
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-          <BigStat T={T} label="Margen estimado mes" value={fmtM(margen)} sub={`Fact. ${MESES[mesAnt]||"mes ant."} ${fmtM(C.totalMesAnteriorBruto)} c/IVA − egresos ${MESES[C.curMonth]||""}`} color={margenPositivo?T.green:T.red} icon={margenPositivo?TrendingUp:TrendingDown}/>
-          <BigStat T={T} label={`Facturación ${MESES[C.curMonth]||""}`} value={fmtM(C.totalMesActual)} sub={varVentas!==null?`${fmtPct(varVentas)} vs ${MESES[C.curMonth===0?11:C.curMonth-1]||"mes ant."}`:"Sin comparativa"} color={T.accent}/>
+          <BigStat T={T} label={`Margen caja (${MESES[mesAnt]||"mes ant."} cerrado)`} value={fmtM(margen)} sub={`Fact. ${MESES[mesAnt]||"mes ant."} ${fmtM(C.totalMesAnteriorBruto)} c/IVA − egresos ${MESES[C.curMonth]||""}`} color={margenPositivo?T.green:T.red} icon={margenPositivo?TrendingUp:TrendingDown}/>
+          <BigStat T={T} label={`Facturación ${MESES[C.curMonth]||""}`} value={fmtM(C.totalMesActual)} sub={varVentas!==null?`${fmtPct(varVentas)} vs ${MESES[mesAnt]||"mes ant."} al día ${C.ventasDiaCorte}`:"Sin comparativa"} color={T.accent}/>
           <BigStat T={T} label={semaforoLabel} value={C.coberturaRatio30!==null?`${C.coberturaRatio30.toFixed(2)}x`:"—"} sub={C.coberturaRatio30!==null?`${fmtM(C.liquidez30)} cubre ${fmtM(C.comp30)} a 30d`:"Sin compromisos en 30d"} color={semaforoColor}/>
         </div>
       </section>

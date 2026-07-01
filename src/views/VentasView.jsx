@@ -22,11 +22,15 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
   const [searchCliente, setSearchCliente] = useState("");
   const [tarifaModo, setTarifaModo] = useState("viaje"); // "viaje" | "km"
   const mesLabel = MESES_FULL[C.curMonth];
-  const varMes = C.totalMesAnterior>0 ? pctChange(C.totalMesActual,C.totalMesAnterior) : 0;
-  const varAno = C.ventasAnoAnterior>0 ? pctChange(C.ventasAnoActual,C.ventasAnoAnterior) : 0;
+  // Mes en curso vs mes anterior AL MISMO DÍA: contra el mes completo siempre
+  // daba un -% alarmante sin significado durante la primera quincena.
+  const varMes = C.totalMesAnteriorCorte>0 ? pctChange(C.totalMesActual,C.totalMesAnteriorCorte) : 0;
+  // Acumulado del año vs el MISMO período del año anterior (igual que la fila
+  // TOTAL YTD de la tabla). Antes comparaba contra el año anterior COMPLETO y
+  // mostraba un rojo enorme aunque el negocio creciera.
+  const varAno = C.acumAnterior>0 ? pctChange(C.acumActual,C.acumAnterior) : 0;
   const varAcumCorte = C.acumCorteAnterior>0 ? pctChange(C.acumCorteActual,C.acumCorteAnterior) : 0;
-  const totalTop = (C.topClientes||[]).reduce((s,c)=>s+c.total,0);
-  const pieData = (C.topClientes||[]).slice(0,6).map((c,i)=>({name:c.name.length>18?c.name.slice(0,16)+"...":c.name,value:c.total,pct:totalTop>0?((c.total/C.totalMesActual)*100).toFixed(1):0}));
+  const pieData = (C.topClientes||[]).slice(0,6).map((c)=>({name:c.name.length>18?c.name.slice(0,16)+"...":c.name,value:c.total,pct:C.totalMesActual>0?((c.total/C.totalMesActual)*100).toFixed(1):"0"}));
   const mesActualAnterior = (C.ventasPorMesComparado||[])[C.curMonth];
   const varMesVsAnioAnt = mesActualAnterior && mesActualAnterior.anterior>0 ? pctChange(mesActualAnterior.actual,mesActualAnterior.anterior) : 0;
 
@@ -56,9 +60,11 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
     };
   });
 
+  // El rango 3m/6m recorta también el FINAL: sin el segundo argumento se
+  // seguían mostrando todos los meses futuros (8 barras extra con "3 meses").
   const chartDataProj = monthRange >= 12
     ? chartDataAll
-    : chartDataAll.slice(Math.max(0, C.curMonth - monthRange + 1));
+    : chartDataAll.slice(Math.max(0, C.curMonth - monthRange + 1), C.curMonth + 1);
 
   const clientesFiltrados = searchCliente.trim()
     ? (C.topClientes||[]).filter(c => c.name.toLowerCase().includes(searchCliente.toLowerCase()))
@@ -79,10 +85,10 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
       <MepcoBanner T={T} year={C.curYear} lastMonth={C.curMonth+1} projections={C.projections}/>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-        <KpiCard icon={DollarSign} label={`Facturación ${mesLabel}`} value={fmtM(C.totalMesActual)} T={T} sub={varMes!==0?fmtPct(varMes)+" vs mes anterior":undefined} color={T.accent} colorBg={T.accentBg}/>
-        <KpiCard icon={TrendingUp} label="Acumulado año" value={fmtM(C.ventasAnoActual)} T={T} sub={varAno!==0?fmtPct(varAno)+` vs ${C.prevYear}`:undefined} color={T.green} colorBg={T.greenBg}/>
+        <KpiCard icon={DollarSign} label={`Facturación ${mesLabel}`} value={fmtM(C.totalMesActual)} T={T} sub={varMes!==0?`${fmtPct(varMes)} vs mes anterior al día ${C.ventasDiaCorte}`:undefined} color={T.accent} colorBg={T.accentBg}/>
+        <KpiCard icon={TrendingUp} label="Acumulado año" value={fmtM(C.ventasAnoActual)} T={T} sub={varAno!==0?fmtPct(varAno)+` vs mismo período ${C.prevYear}`:undefined} color={T.green} colorBg={T.greenBg}/>
         <KpiCard icon={Target} label="Proyección anual" value={fmtM(projection)} T={T} sub={`${fmtPct(projPct)} vs ${C.prevYear}`} color={T.amber} colorBg={T.amberBg} badge={projectionMode.toUpperCase()}/>
-        <KpiCard icon={Zap} label="Impacto MEPCO acum." value={C.impactoMepcoAcum>0?"+"+fmtM(C.impactoMepcoAcum):"—"} T={T} sub={C.mepcoActivo?"Atribuible al reajuste · desde mayo 2026":"Inicia mayo 2026"} color={T.violet} colorBg={T.violetBg} badge={C.mepcoActivo?"VIGENTE":"PREVIO"}/>
+        <KpiCard icon={Zap} label={C.mepcoHistoricoCerrado?"Impacto MEPCO (histórico)":"Impacto MEPCO acum."} value={C.impactoMepcoAcum>0?"+"+fmtM(C.impactoMepcoAcum):"—"} T={T} sub={C.mepcoHistoricoCerrado?`Registro cerrado a ${C.mepcoCorteLabel}`:(C.mepcoActivo?"Atribuible al reajuste · desde mayo 2026":"Inicia mayo 2026")} color={T.violet} colorBg={T.violetBg} badge={C.mepcoHistoricoCerrado?"CERRADO":(C.mepcoActivo?"VIGENTE":"PREVIO")}/>
         {C.pozoCombustibleAcum>0 && (() => {
           const cob = C.coberturaPozoMepco;
           const cobPct = cob !== null && cob !== undefined ? (cob*100).toFixed(0) : null;
@@ -95,7 +101,7 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
               T={T}
               color={T.red}
               colorBg={T.redBg}
-              badge="ACUM."
+              badge={C.mepcoHistoricoCerrado?"CERRADO":"ACUM."}
               sub={`Brecha: ${C.brechaPozoMepco>0?"−":"+"}${fmtM(Math.abs(C.brechaPozoMepco))} · ${cobLabel}`}
             />
           );
@@ -358,11 +364,13 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
             <tbody>
               {(C.ventasPorMesComparado||[]).filter(r=>r.actual>0||r.anterior>0).map((r,i)=>{
                 const vp=r.anterior>0?pctChange(r.actual,r.anterior):0;
+                const enCurso=r.mes===MESES[C.curMonth]&&r.actual>0;
                 return(<tr key={i} style={{borderBottom:`1px solid ${T.border}22`,background:r.mes===MESES[C.curMonth]?T.accentBg:"transparent"}}>
-                  <td style={{padding:"6px 10px",color:T.tx,fontWeight:r.mes===MESES[C.curMonth]?600:400}}>{r.mes}</td>
+                  <td style={{padding:"6px 10px",color:T.tx,fontWeight:r.mes===MESES[C.curMonth]?600:400}}>{r.mes}{enCurso&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:999,background:T.amberBg,color:T.amber}}>EN CURSO</span>}</td>
                   <td style={{padding:"6px 10px",textAlign:"right",color:T.txD}}>{fmtM(r.anterior)}</td>
                   <td style={{padding:"6px 10px",textAlign:"right",color:T.tx,fontWeight:500}}>{fmtM(r.actual)}</td>
-                  <td style={{padding:"6px 10px",textAlign:"right",color:vp>=0?T.green:T.red,fontWeight:600}}>{r.anterior>0?fmtPct(vp):"—"}</td>
+                  {/* En el mes parcial la Var% contra el mes completo del año pasado no significa nada */}
+                  <td style={{padding:"6px 10px",textAlign:"right",color:enCurso?T.txD:vp>=0?T.green:T.red,fontWeight:600}} title={enCurso?"Mes en curso: comparación parcial vs mes completo, solo referencial":undefined}>{r.anterior>0?(enCurso?"("+fmtPct(vp)+")":fmtPct(vp)):"—"}</td>
                 </tr>);
               })}
               <tr style={{borderTop:`2px solid ${T.border}`}}>

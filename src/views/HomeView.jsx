@@ -131,7 +131,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
       <ContadorSinAccidentes C={C} T={T} variant="hero"/>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-        <KpiCard icon={DollarSign} label="Facturación mes" value={fmtM(C.totalMesActual)} T={T} sub={C.totalMesAnterior>0?fmtPct(pctChange(C.totalMesActual,C.totalMesAnterior))+" vs mes ant.":undefined} color={T.accent} colorBg={T.accentBg} trend={trendVentas12m} trendLabel="Últimos 12 meses"/>
+        <KpiCard icon={DollarSign} label="Facturación mes" value={fmtM(C.totalMesActual)} T={T} sub={C.totalMesAnteriorCorte>0?`${fmtPct(pctChange(C.totalMesActual,C.totalMesAnteriorCorte))} vs mes ant. al día ${C.ventasDiaCorte}`:undefined} color={T.accent} colorBg={T.accentBg} trend={trendVentas12m} trendLabel="Últimos 12 meses"/>
         <KpiCard icon={Truck} label="Viajes mes" value={C.viajesMesActual?.toLocaleString("es-CL")} T={T} sub={`Corte día ${C.dayOfMonth}: ${C.viajesCorteActual} vs ${C.viajesCorteAnterior}`} color={T.green} colorBg={T.greenBg} trend={trendViajes} trendLabel={`${trendViajes.filter(Boolean).length} meses ${C.curYear}`}/>
         <KpiCard icon={Building2} label="Caja total" value={fmtM(C.totalCaja)} T={T} sub={Object.keys(C.saldosBancos||{}).length+" bancos"} color={T.teal} colorBg={T.tealBg}/>
         <KpiCard
@@ -158,17 +158,20 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KpiCard icon={TrendingUp} label={`Fact. proyectada ${C.curMonth<11?MESES[C.curMonth+1]:"Ene"}`} value={C.proyMesSiguientePorViajes>0?fmtM(C.proyMesSiguientePorViajes):"—"} T={T} sub={C.proyMesSiguientePorViajes>0?`Basada en viajes ${MESES[C.curMonth]} × tarifa hist.`:"Sin viajes mes actual"} color={T.teal} colorBg={T.tealBg} badge="PRÓX. MES"/>
-        <KpiCard icon={BarChart3} label="Margen caja mes (est.)" value={fmtM(C.margenMesEstimado)} T={T}
-          sub="Fact. bruta − costos financieros"
-          color={C.margenMesEstimado>=0?T.green:T.red} colorBg={C.margenMesEstimado>=0?T.greenBg:T.redBg}
+        {/* Usa la variante CAJA (facturación del mes CERRADO anterior): la otra
+            restaba los costos del mes completo a la facturación parcial y salía
+            en rojo garantizado los primeros ~15 días de cada mes. */}
+        <KpiCard icon={BarChart3} label={`Margen caja (${MESES[(C.curMonth+11)%12]} cerrado)`} value={fmtM(C.margenMesEstimadoCaja)} T={T}
+          sub="Fact. bruta mes cerrado − costos financieros"
+          color={C.margenMesEstimadoCaja>=0?T.green:T.red} colorBg={C.margenMesEstimadoCaja>=0?T.greenBg:T.redBg}
           tooltip={<div>
             <div style={{fontWeight:700,color:T.tooltipTx,marginBottom:6,fontSize:12}}>Cobertura de costos fijos financieros</div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Facturación bruta mes (c/IVA)</span><strong>{fmtM(C.totalMesActualBruto)}</strong></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>Facturación bruta {MESES[(C.curMonth+11)%12]} (c/IVA)</span><strong>{fmtM(C.totalMesAnteriorBruto)}</strong></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>− Compromisos del mes</span><strong>{fmtM(C.totalCompromisosMes)}</strong></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>− Cuota leasing c/IVA</span><strong>{fmtM(C.leasingMesEstimado)}</strong></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span>− Cuota crédito Itaú</span><strong>{fmtM(C.creditoMesEstimado)}</strong></div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>= Margen estimado</span><strong>{fmtM(C.margenMesEstimado)}</strong></div>
-            <div style={{fontSize:11,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4}}>No incluye combustible ni remuneraciones: mide si la facturación cubre los costos financieros fijos, no la utilidad del negocio.</div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 3px",borderTop:`1px solid ${T.tooltipTx}22`,marginTop:3,fontWeight:700}}><span>= Margen estimado</span><strong>{fmtM(C.margenMesEstimadoCaja)}</strong></div>
+            <div style={{fontSize:11,color:T.tooltipTx,opacity:0.7,marginTop:8,lineHeight:1.4}}>Usa el último mes CERRADO (el mes en curso tiene facturación parcial y daría un margen artificialmente negativo). No incluye combustible ni remuneraciones: mide si la facturación cubre los costos financieros fijos, no la utilidad del negocio.</div>
           </div>}/>
         <KpiCard icon={Truck} label="Leasing" value={fmtM(C.leasingTotalCuotaIVA)+" c/IVA"} T={T} sub={`${C.leasingContratosActivos} contratos · ${C.leasingOperaciones} operaciones`} color={T.violet} colorBg={T.violetBg}/>
         <KpiCard icon={CreditCard} label="Crédito Itaú" value={fmtM(C.creditoDeudaTotal)} T={T} sub={C.creditoProxima?`Próxima: ${fmtM(C.creditoProxima.valorCuota)} · cuota #${C.creditoProxima.cuota}`:"En gracia"} color={T.red} colorBg={T.redBg}/>

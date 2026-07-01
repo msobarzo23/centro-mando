@@ -179,7 +179,7 @@ export function getReajusteParaCliente(rut, year = MEPCO_ADJUSTMENT_YEAR) {
   if (info.tipo === "ninguno") return null;
   if (info.tipo === "reembolso") return { label: "Reembolso", pct: null, tooltip: info.observacion };
   return {
-    label: `${(info.pct * 100).toFixed(info.pct % 0.01 === 0 ? 0 : 1)}%`,
+    label: `${(info.pct * 100).toFixed(Math.round(info.pct * 1000) % 10 === 0 ? 0 : 1)}%`,
     pct: info.pct,
     tooltip: info.observacion || (info.pendiente ? "Pendiente de definir; aplica último pct conocido como aproximación" : null),
     pendiente: info.pendiente,

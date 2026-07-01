@@ -70,6 +70,10 @@ export function computeAll(data) {
   const totalMesAnterior = ventasMesAnterior.reduce((s,r) => s+r._neto, 0);
   const totalMesAnteriorBruto = ventasMesAnterior.reduce((s,r) => s+r._bruto, 0);
   const totalMesActualBruto = ventasMesActual.reduce((s,r) => s+r._bruto, 0);
+  // Corte para comparar el mes EN CURSO contra el anterior al MISMO día: mes
+  // parcial vs mes completo siempre da un -% alarmante sin significado.
+  const ventasDiaCorte = ventasMesActual.length>0 ? Math.max(...ventasMesActual.map(r=>r._date.getDate())) : now.getDate();
+  const totalMesAnteriorCorte = ventasMesAnterior.filter(r=>r._date.getDate()<=ventasDiaCorte).reduce((s,r)=>s+r._neto,0);
   const ventasPorMes = []; for (let m=0; m<12; m++) { const rows=ventasRows.filter(r=>r._date.getMonth()===m&&r._date.getFullYear()===curYear); ventasPorMes.push({mes:MESES[m],total:rows.reduce((s,r)=>s+r._neto,0),count:rows.length}); }
   const clienteMap = {};
   ventasMesActual.forEach(r => {
@@ -168,14 +172,23 @@ export function computeAll(data) {
   });
   const clientPrevList = Object.entries(clientPrevByRut).map(([rut, prev]) => ({ rut, prev }));
 
+  // Uplift indexado por MES DE FACTURACIÓN (1-12): la factura del mes f cobra los
+  // viajes del mes f-1, y getUpliftPonderado espera el MES DE VIAJE. Antes el mapa
+  // guardaba mes-de-viaje y cada consumidor lo leía con una convención distinta:
+  // la proyección estacional y la tabla de cumplimiento quedaban corridas un mes
+  // (abril aparecía con uplift aunque se factura con viajes de marzo, pre-alza).
   const upliftPorMes = {};
-  for (let m = 1; m <= 12; m++) {
-    if (curYear === MEPCO_ADJUSTMENT_YEAR && m >= MEPCO_TRIP_START_MONTH) {
-      upliftPorMes[m] = getUpliftPonderado(clientPrevList, m);
-    } else if (curYear > MEPCO_ADJUSTMENT_YEAR) {
-      upliftPorMes[m] = getUpliftPonderado(clientPrevList, MEPCO_ADJUSTMENT_MONTH);
+  for (let f = 1; f <= 12; f++) {
+    const mesViaje = f - 1; // f=1 (enero) factura viajes de diciembre del año previo
+    if (curYear === MEPCO_ADJUSTMENT_YEAR) {
+      upliftPorMes[f] = mesViaje >= MEPCO_TRIP_START_MONTH ? getUpliftPonderado(clientPrevList, mesViaje) : 0;
+    } else if (curYear === MEPCO_ADJUSTMENT_YEAR + 1) {
+      // Las tasas/pesos base vienen del año del reajuste: desde la factura de mayo
+      // la base YA incluye el alza (aplicarla de nuevo la contaría dos veces);
+      // solo ene-abr comparan contra base pre-reajuste.
+      upliftPorMes[f] = f < MEPCO_ADJUSTMENT_MONTH ? getUpliftPonderado(clientPrevList, MEPCO_ADJUSTMENT_MONTH) : 0;
     } else {
-      upliftPorMes[m] = 0;
+      upliftPorMes[f] = 0; // base posterior al reajuste: ya viene con tarifa nueva
     }
   }
 
@@ -211,6 +224,11 @@ export function computeAll(data) {
 
   let projSeasonal = 0;
   const totalPrev = ventasAnoAnterior;
+  // Aporte esperado por mes con la MISMA fórmula que projSeasonal (incluido el
+  // uplift por mes): las barras del gráfico se reparten desde acá para que su
+  // suma reproduzca EXACTO el KPI "Proyección anual". Antes se repartía
+  // projSeasonal × peso sin uplift y los meses no sumaban el titular.
+  const proyMesEsperado = Array(12).fill(null);
   if (totalPrev>0) {
     const weights = ventasPorMesComparado.map(m=>m.anterior/totalPrev);
     const weightsClosed = closedMonths.reduce((s,m)=>s+weights[m-1],0);
@@ -224,9 +242,11 @@ export function computeAll(data) {
         const elapsed=businessDaysElapsed(curYear,openMonth,now); const total=businessDaysInMonth(curYear,openMonth);
         const openProrata=elapsed>0?ytdOpen*(total/elapsed):ytdOpen;
         openContribution=Math.max(openProrata,expectedOpen);
+        proyMesEsperado[openMonth-1]=openContribution;
       }
       const futureMonths = []; for(let m=1;m<=12;m++){if(!closedMonths.includes(m)&&m!==openMonth)futureMonths.push(m);}
-      const futureContribution = futureMonths.reduce((s,m)=>s+(annualFromClosed*weights[m-1]*(1+(upliftProyPorMes[m]||0))),0);
+      let futureContribution = 0;
+      futureMonths.forEach(m=>{const v=annualFromClosed*weights[m-1]*(1+(upliftProyPorMes[m]||0));proyMesEsperado[m-1]=v;futureContribution+=v;});
       projSeasonal = ytdClosed+openContribution+futureContribution;
     }
   }
@@ -251,15 +271,15 @@ export function computeAll(data) {
 
   const ventasPorMesConProyeccion = ventasPorMesComparado.map((m,i) => {
     const mNum = i+1;
+    const fallback = projSeasonal*(totalPrev>0 ? m.anterior/totalPrev : (1/12));
     if (m.actual>0 && mNum!==openMonth) return {...m, proyectado:null, tipo:"real"};
     else if (mNum===openMonth) {
-      const weight = totalPrev>0 ? m.anterior/totalPrev : (1/12);
-      const expected = projSeasonal*weight;
+      const expected = proyMesEsperado[i]!=null ? proyMesEsperado[i] : fallback;
       const faltante = Math.max(0, expected-m.actual);
       return {...m, proyectado:faltante, tipo:"parcial"};
     } else {
-      const weight = totalPrev>0 ? m.anterior/totalPrev : (1/12);
-      return {...m, actual:0, proyectado:projSeasonal*weight, tipo:"futuro"};
+      const expected = proyMesEsperado[i]!=null ? proyMesEsperado[i] : fallback;
+      return {...m, actual:0, proyectado:expected, tipo:"futuro"};
     }
   });
 
@@ -277,14 +297,16 @@ export function computeAll(data) {
   let impactoMepcoMes=0, impactoMepcoAcum=0;
   if (mepcoActivo) {
     ventasRows.forEach(r => {
-      if (r._date.getFullYear() !== curYear) return;
+      // Ventana congelada: SIEMPRE el año del corte. Si se filtrara por el año en
+      // curso, el 1-ene-2027 el registro histórico se pondría a cero solo.
+      if (r._date.getFullYear() !== MEPCO_HISTORICO_CORTE_YEAR) return;
       const mes = r._date.getMonth() + 1;
       if (mes < MEPCO_ADJUSTMENT_MONTH) return;
-      const { pct } = getReajusteHistorico(r._rut, mes, curYear);
+      const { pct } = getReajusteHistorico(r._rut, mes, MEPCO_HISTORICO_CORTE_YEAR);
       if (pct <= 0) return;
       const impacto = r._neto * pct / (1 + pct);
       impactoMepcoAcum += impacto;
-      if (mes === curMonth + 1) impactoMepcoMes += impacto;
+      if (curYear === MEPCO_HISTORICO_CORTE_YEAR && mes === curMonth + 1) impactoMepcoMes += impacto;
     });
   }
 
@@ -327,10 +349,30 @@ export function computeAll(data) {
   viajesRows.forEach(r=>{if(r._date.getFullYear()!==prevYear)return;const k=normClienteKey(r._cliente);if(!k)return;const m=r._date.getMonth();if(!viajesByClienteMesPrev[k])viajesByClienteMesPrev[k]=Array(12).fill(0);viajesByClienteMesPrev[k][m]+=1;});
   ventasRows.forEach(r=>{if(r._date.getFullYear()!==prevYear)return;const rawName=r["RAZON SOCIAL"]||r["Razon Social"]||r.razon_social||"";const k=normClienteKey(rawName);if(!k)return;const m=r._date.getMonth();if(!ventasByClienteMesPrev[k])ventasByClienteMesPrev[k]=Array(12).fill(0);ventasByClienteMesPrev[k][m]+=r._neto;});
 
+  // El nombre del cliente difiere entre planillas (Viajes lo abrevia: "MAXAM";
+  // facturación trae la razón social: "MAXAM CHILE S.A."). El cruce por igualdad
+  // exacta dejaba a esos clientes sin tarifa propia (caían a la tarifa global).
+  // Se resuelve por núcleo de tokens, igual que el cruce viajes↔flota del
+  // diagnóstico; si varias razones sociales calzan el nombre corto, se suman.
+  const ventasClienteKeys = Object.keys(ventasByClienteMesPrev);
+  const ventasCoreMap = new Map(ventasClienteKeys.map(k => [k, clienteCoreTokens(k)]));
+  const ventasArrDeViajesKey = (vKey) => {
+    if (ventasByClienteMesPrev[vKey]) return ventasByClienteMesPrev[vKey];
+    const vc = clienteCoreTokens(vKey);
+    if (!vc.length) return null;
+    let m = ventasClienteKeys.filter(fk => { const fc = ventasCoreMap.get(fk); return fc.length === vc.length && tokensPrefix(vc, fc); });
+    if (!m.length) m = ventasClienteKeys.filter(fk => tokensPrefix(vc, ventasCoreMap.get(fk)));
+    if (!m.length) m = ventasClienteKeys.filter(fk => tokensPrefix(ventasCoreMap.get(fk), vc));
+    if (!m.length) return null;
+    const out = Array(12).fill(0);
+    m.forEach(fk => ventasByClienteMesPrev[fk].forEach((v, i) => { out[i] += v; }));
+    return out;
+  };
+
   const tasaPorCliente = {};
   let globalVentasLagged=0, globalViajesLagged=0;
   Object.keys(viajesByClienteMesPrev).forEach(k=>{
-    const vj=viajesByClienteMesPrev[k],vt=ventasByClienteMesPrev[k]||Array(12).fill(0);
+    const vj=viajesByClienteMesPrev[k],vt=ventasArrDeViajesKey(k)||Array(12).fill(0);
     let sumViajes=0,sumVentas=0,mesesConData=0;
     for(let m=0;m<11;m++){if(vj[m]>0&&vt[m+1]>0){sumViajes+=vj[m];sumVentas+=vt[m+1];mesesConData++;}}
     if(mesesConData>=3&&sumViajes>0)tasaPorCliente[k]={tasa:sumVentas/sumViajes,meses:mesesConData,confianza:"alta"};
@@ -360,7 +402,7 @@ export function computeAll(data) {
     // meses cerrados — no se descuenta de la expectativa. Acotarlo al "observado"
     // de un solo mes cerrado (mayo) lo contamina con el lag de facturación y
     // contradice esa misma lectura de "viajes sin facturar".
-    const upliftMes = upliftPorMes[mF] || 0;
+    const upliftMes = upliftPorMes[mF + 1] || 0; // upliftPorMes es 1-indexado (mes de factura)
     facturacionProyViajesSinMepco[mF]=totalProy;
     if (upliftMes > 0) {
       totalProy = totalProy * (1 + upliftMes);
@@ -370,7 +412,16 @@ export function computeAll(data) {
     desglosePorMesFactura[mF]=desglose.sort((a,b)=>b.aporte-a.aporte);
   }
   const proyMesActualPorViajes = facturacionProyectadaPorViajes[curMonth]||0;
-  const proyMesSiguientePorViajes = curMonth<11 ? facturacionProyectadaPorViajes[curMonth+1]||0 : 0;
+  // En diciembre el "mes siguiente" es ENERO del año próximo (viajes de este
+  // diciembre × tarifa); el arreglo anual no cruza el año, se calcula aparte.
+  let proyMesSiguientePorViajes = 0;
+  if (curMonth<11) proyMesSiguientePorViajes = facturacionProyectadaPorViajes[curMonth+1]||0;
+  else {
+    const viajesDicCli={};viajesRows.forEach(r=>{if(r._date.getFullYear()===curYear&&r._date.getMonth()===11){const k=normClienteKey(r._cliente);if(k)viajesDicCli[k]=(viajesDicCli[k]||0)+1;}});
+    Object.entries(viajesDicCli).forEach(([k,c])=>{const t=tasaPorCliente[k];proyMesSiguientePorViajes+=c*((t&&t.tasa)||tasaGlobal);});
+    const upliftEneroProx = curYear===MEPCO_ADJUSTMENT_YEAR ? getUpliftPonderado(clientPrevList, 12) : 0;
+    proyMesSiguientePorViajes *= 1+upliftEneroProx;
+  }
   const desgloseMesActualProy = desglosePorMesFactura[curMonth]||[];
 
   let proyAnualPorViajes=0;
@@ -378,7 +429,7 @@ export function computeAll(data) {
     const real=ventasPorMesComparado[m]?.actual||0;
     if(m<curMonth&&real>0)proyAnualPorViajes+=real;
     else if(m===curMonth)proyAnualPorViajes+=Math.max(real,facturacionProyectadaPorViajes[m]);
-    else{const proyV=facturacionProyectadaPorViajes[m]||0;if(proyV>0)proyAnualPorViajes+=proyV;else if(projSeasonal>0&&totalPrev>0){const w=(ventasPorMesComparado[m]?.anterior||0)/totalPrev;proyAnualPorViajes+=projSeasonal*w;}}
+    else{const proyV=facturacionProyectadaPorViajes[m]||0;if(proyV>0)proyAnualPorViajes+=proyV;else if(projSeasonal>0){const esp=proyMesEsperado[m];if(esp!=null)proyAnualPorViajes+=esp;else if(totalPrev>0)proyAnualPorViajes+=projSeasonal*((ventasPorMesComparado[m]?.anterior||0)/totalPrev);}}
   }
 
   // ══════════ CUMPLIMIENTO PROYECTADO VS REAL (meses cerrados) ══════════
@@ -412,8 +463,10 @@ export function computeAll(data) {
     return {mes:MESES[i],mesNum:mNum,real,espViajes,espEstacional,desvio,desvioPct,lectura};
   });
 
-  const vClienteMap={};viajesMesActual.forEach(r=>{vClienteMap[r._cliente]=(vClienteMap[r._cliente]||0)+1;});
-  const topClientesViajes=Object.entries(vClienteMap).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,count])=>({name,count}));
+  // Agrupado por nombre NORMALIZADO (dos escrituras del mismo cliente no deben
+  // partir la fila); se conserva el primer nombre crudo para mostrar.
+  const vClienteMap={};viajesMesActual.forEach(r=>{const k=normClienteKey(r._cliente);if(!k)return;if(!vClienteMap[k])vClienteMap[k]={name:r._cliente,count:0};vClienteMap[k].count++;});
+  const topClientesViajes=Object.values(vClienteMap).sort((a,b)=>b.count-a.count).slice(0,8).map(c=>({name:c.name,count:c.count}));
   const equipoMap={};viajesMesActual.forEach(r=>{const e=r._equipo||"Sin tipo";equipoMap[e]=(equipoMap[e]||0)+1;});
   const viajesPorEquipo=Object.entries(equipoMap).sort((a,b)=>b[1]-a[1]).map(([name,count])=>({name:name.length>25?name.slice(0,22)+"...":name,count}));
 
@@ -433,10 +486,13 @@ export function computeAll(data) {
   const viajesPorDiaKey={};viajesRows.forEach(r=>{const k=dkey(r._date);viajesPorDiaKey[k]=(viajesPorDiaKey[k]||0)+1;});
   const viajesMesPorDia={};viajesMesActual.forEach(r=>{const d=r._date.getDate();viajesMesPorDia[d]=(viajesMesPorDia[d]||0)+1;});
 
-  // Ritmo reciente plano: viajes/día de los últimos 28 días con tope en la última fecha con datos.
+  // Ritmo reciente plano: viajes/día de los últimos 28 días ANTERIORES al último
+  // día con datos (ese día casi siempre está en curso y subestimaría el ritmo;
+  // el tooltip promete "excluye el día en curso").
   const ultimaFechaDatos=viajesMesActual.length>0?new Date(curYear,curMonth,maxDayWithData):now;
-  let viajes28=0;for(let i=0;i<28;i++){const d=new Date(ultimaFechaDatos);d.setDate(d.getDate()-i);viajes28+=viajesPorDiaKey[dkey(d)]||0;}
-  const ritmoDiaReciente=Math.round(viajes28/28);
+  let viajes28=0;for(let i=1;i<=28;i++){const d=new Date(ultimaFechaDatos);d.setDate(d.getDate()-i);viajes28+=viajesPorDiaKey[dkey(d)]||0;}
+  const ritmoDiaRecienteExact=viajes28/28;
+  const ritmoDiaReciente=Math.round(ritmoDiaRecienteExact);
 
   // Norma por día de semana: 6 semanas previas al último día con datos, descartando
   // el valor más bajo de cada día (probable feriado) para no ensuciar el promedio.
@@ -444,7 +500,7 @@ export function computeAll(data) {
   {
     const muestras=Array.from({length:7},()=>[]);
     for(let i=1;i<=42;i++){const d=new Date(ultimaFechaDatos);d.setDate(d.getDate()-i);muestras[d.getDay()].push(viajesPorDiaKey[dkey(d)]||0);}
-    for(let w=0;w<7;w++){let v=muestras[w];if(v.length>=4)v=[...v].sort((a,b)=>a-b).slice(1);normaSemana[w]=v.length?v.reduce((s,x)=>s+x,0)/v.length:ritmoDiaReciente;}
+    for(let w=0;w<7;w++){let v=muestras[w];if(v.length>=4)v=[...v].sort((a,b)=>a-b).slice(1);normaSemana[w]=v.length?v.reduce((s,x)=>s+x,0)/v.length:ritmoDiaRecienteExact;}
   }
   const hayNorma=normaSemana.some(x=>x>0);
 
@@ -471,11 +527,11 @@ export function computeAll(data) {
       else acc+=normaSemana[w];
     }
     proyViajesDiaSemana=Math.round(acc);
-  }else proyViajesDiaSemana=Math.round(ritmoDiaReciente*diasTotalesMes);
+  }else proyViajesDiaSemana=Math.round(ritmoDiaRecienteExact*diasTotalesMes);
 
   // Referencias para el tooltip (no mueven el número principal).
-  const proyViajesRunRatePlano=Math.round(ritmoDiaReciente*diasTotalesMes);
-  const proyViajesProrrateoSimple=diasCompletosMes>0?Math.round(viajesDiasCompletos/diasCompletosMes*diasTotalesMes):ritmoDiaReciente*diasTotalesMes;
+  const proyViajesRunRatePlano=Math.round(ritmoDiaRecienteExact*diasTotalesMes);
+  const proyViajesProrrateoSimple=diasCompletosMes>0?Math.round(viajesDiasCompletos/diasCompletosMes*diasTotalesMes):Math.round(ritmoDiaRecienteExact*diasTotalesMes);
   const viajesMismoMesAnioAnt=viajesRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===prevYear).length;
   const viajesAnioAntMismoCorte=viajesRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===prevYear&&r._date.getDate()<=diasCompletosMes).length;
   const proyViajesEstacional=viajesAnioAntMismoCorte>0&&viajesMismoMesAnioAnt>0?Math.round(viajesDiasCompletos*(viajesMismoMesAnioAnt/viajesAnioAntMismoCorte)):(viajesMismoMesAnioAnt>0?viajesMismoMesAnioAnt:proyViajesProrrateoSimple);
@@ -483,14 +539,17 @@ export function computeAll(data) {
   const proyViajesHibrido=Math.max(proyViajesDiaSemana,viajesMesActual.length);
   const viajesProyectadosFaltantes=Math.max(0,proyViajesHibrido-viajesMesActual.length);
 
-  const topClientesViajesProy=(Object.entries(vClienteMap).sort((a,b)=>b[1]-a[1]).slice(0,8)).map(([name,count])=>{
+  const topClientesViajesProy=(Object.entries(vClienteMap).sort((a,b)=>b[1].count-a[1].count).slice(0,8)).map(([cliKey,cliInfo])=>{
+    const name=cliInfo.name, count=cliInfo.count;
     // Mismo método que el KPI de cierre del mes (norma por día de semana sobre las
     // últimas 6 semanas del cliente), para que la tabla y el total cuenten la misma
     // historia. Antes la tabla usaba prorrateo lineal solo con los días de junio y
     // divergía del KPI. Si el cliente es nuevo (sin norma), cae al prorrateo simple.
-    const clienteViajesMesAnt=viajesRows.filter(r=>r._cliente===name&&r._date.getMonth()===(curMonth===0?11:curMonth-1)&&r._date.getFullYear()===(curMonth===0?curYear-1:curYear)).length;
-    const porDiaKeyCli={};viajesRows.forEach(r=>{if(r._cliente===name){const k=dkey(r._date);porDiaKeyCli[k]=(porDiaKeyCli[k]||0)+1;}});
-    const porDiaMesCli={};viajesMesActual.forEach(r=>{if(r._cliente===name){const d=r._date.getDate();porDiaMesCli[d]=(porDiaMesCli[d]||0)+1;}});
+    // Los filtros usan la clave normalizada, la misma con que se agrupó el top.
+    const esCli=(r)=>normClienteKey(r._cliente)===cliKey;
+    const clienteViajesMesAnt=viajesRows.filter(r=>esCli(r)&&r._date.getMonth()===(curMonth===0?11:curMonth-1)&&r._date.getFullYear()===(curMonth===0?curYear-1:curYear)).length;
+    const porDiaKeyCli={};viajesRows.forEach(r=>{if(esCli(r)){const k=dkey(r._date);porDiaKeyCli[k]=(porDiaKeyCli[k]||0)+1;}});
+    const porDiaMesCli={};viajesMesActual.forEach(r=>{if(esCli(r)){const d=r._date.getDate();porDiaMesCli[d]=(porDiaMesCli[d]||0)+1;}});
     const normaCli=Array(7).fill(0);
     {
       const muestras=Array.from({length:7},()=>[]);
@@ -509,7 +568,7 @@ export function computeAll(data) {
       }
       proyCierreCliente=Math.round(acc);
     }else{
-      const clienteViajesDiasCompletos=viajesMesActual.filter(r=>r._cliente===name&&r._date.getDate()<=diasCompletosMes).length;
+      const clienteViajesDiasCompletos=viajesMesActual.filter(r=>esCli(r)&&r._date.getDate()<=diasCompletosMes).length;
       proyCierreCliente=diasCompletosMes>0?Math.round(clienteViajesDiasCompletos/diasCompletosMes*diasTotalesMes):count;
     }
     const proyCierre=Math.max(proyCierreCliente,count);
@@ -531,20 +590,32 @@ export function computeAll(data) {
   const flotaMesActual=flotaRows.filter(r=>r._date.getMonth()===curMonth&&r._date.getFullYear()===curYear);
   const kmMesActual=flotaMesActual.reduce((s,r)=>s+r._km,0);
   const kmAnioActual=flotaRows.filter(r=>r._date.getFullYear()===curYear).reduce((s,r)=>s+r._km,0);
-  const kmPorDiaMap={};flotaRows.forEach(r=>{const k=r._date.toISOString().slice(0,10);kmPorDiaMap[k]=(kmPorDiaMap[k]||0)+r._km;});
+  const kmPorDiaMap={};flotaRows.forEach(r=>{const k=dkey(r._date);kmPorDiaMap[k]=(kmPorDiaMap[k]||0)+r._km;});
   const kmPorDia=Object.entries(kmPorDiaMap).map(([fecha,km])=>({fecha,km})).sort((a,b)=>a.fecha.localeCompare(b.fecha));
-  const totalTractocamiones=(data.flotaEquipos||[]).filter(r=>{const t=(r.tipoequipo||r.TipoEquipo||"").toUpperCase();return t.includes("TRACTOCAMION");}).length;
-  const tripsByDate={};flotaRows.forEach(r=>{if(r._date.getFullYear()===curYear){const key=r._date.toISOString().slice(0,10);tripsByDate[key]=(tripsByDate[key]||0)+1;}});
+  // Patentes normalizadas y DEDUPLICADAS del padrón (el sufijo -dv y las filas
+  // repetidas inflaban el denominador de ocupación: contaban filas, no tractos).
+  const normPat=(p)=>(p==null?"":String(p)).trim().toUpperCase().split("-")[0].replace(/\s+/g,"");
+  const padronTractoSet=new Set((data.flotaEquipos||[]).filter(r=>(r.tipoequipo||r.TipoEquipo||"").toUpperCase().includes("TRACTOCAMION")).map(r=>normPat(r.patente||r.Patente)).filter(Boolean));
+  const totalTractocamiones=padronTractoSet.size;
+  const tripsByDate={};flotaRows.forEach(r=>{if(r._date.getFullYear()===curYear){const key=dkey(r._date);tripsByDate[key]=(tripsByDate[key]||0)+1;}});
   const sortedDates=Object.entries(tripsByDate).sort((a,b)=>b[0].localeCompare(a[0]));
-  // "Último día completo": el día de hoy casi nunca está cerrado (sigue en curso),
-  // así que no debe contar como completo aunque ya tenga registros. Tomamos el día
-  // más reciente con volumen normal (>=50) que sea ANTERIOR a hoy.
+  // "Último día completo" DE FLOTA (tramos): ancla las ventanas de ocupación. El
+  // día de hoy casi nunca está cerrado, así que se busca el día más reciente con
+  // volumen normal (>=50 tramos) anterior a hoy.
   const hoyKey=dkey(now);
   const lastFullDayEntry=sortedDates.find(([d,cnt])=>cnt>=50&&d<hoyKey)||sortedDates.find(([_,cnt])=>cnt>=50);
   const lastFullDay=lastFullDayEntry?lastFullDayEntry[0]:null;
   const lastFullDayDate=lastFullDay?new Date(lastFullDay+"T12:00:00"):null;
   const lastFullDayLabel=lastFullDayDate?lastFullDayDate.toLocaleDateString("es-CL",{day:"2-digit",month:"short"}):"—";
-  const viajesAyer=lastFullDayEntry?lastFullDayEntry[1]:0;
+  // "Viajes de ayer": desde la planilla de VIAJES (viajes reales), no desde
+  // flotaViajes (tramos por tracto, ~3× más e incluye retornos vacíos). Mezclar
+  // fuentes hacía incomparable el KPI diario con el mensual y la alerta de
+  // "viajes bajos" no disparaba nunca.
+  const viajesDiasCerrados=Object.entries(viajesPorDiaKey).filter(([d])=>d<hoyKey).sort((a,b)=>b[0].localeCompare(a[0]));
+  const umbralViajesDiaCompleto=Math.max(10,ritmoDiaRecienteExact*0.4);
+  const viajesAyerEntry=viajesDiasCerrados.find(([,c])=>c>=umbralViajesDiaCompleto)||viajesDiasCerrados[0]||null;
+  const viajesAyer=viajesAyerEntry?viajesAyerEntry[1]:0;
+  const viajesAyerLabel=viajesAyerEntry?new Date(viajesAyerEntry[0]+"T12:00:00").toLocaleDateString("es-CL",{day:"2-digit",month:"short"}):"—";
   // ── Ocupación de flota ────────────────────────────────────────────────
   // La planilla solo registra la fecha de INICIO del viaje, no su duración. Un
   // tracto en una ruta de varios días sigue trabajando aunque no genere registro
@@ -553,8 +624,6 @@ export function computeAll(data) {
   // flota que inició ≥1 viaje en los últimos 7 días cerrados. Además contamos solo
   // patentes que son TRACTOCAMION en el padrón (el campo Tracto a veces trae
   // camiones/camionetas), normalizando el dígito verificador (PDGW41 ≡ PDGW41-x).
-  const normPat=(p)=>(p==null?"":String(p)).trim().toUpperCase().split("-")[0].replace(/\s+/g,"");
-  const padronTractoSet=new Set((data.flotaEquipos||[]).filter(r=>(r.tipoequipo||r.TipoEquipo||"").toUpperCase().includes("TRACTOCAMION")).map(r=>normPat(r.patente||r.Patente)).filter(Boolean));
   const comodinNorm=normPat(COMODIN_TRACTO);
   const flotaTractoDia={};
   flotaRows.forEach(r=>{const t=normPat(r._tracto);if(!t||t===comodinNorm||!padronTractoSet.has(t))return;const k=dkey(r._date);if(!flotaTractoDia[k])flotaTractoDia[k]=new Set();flotaTractoDia[k].add(t);});
@@ -571,7 +640,16 @@ export function computeAll(data) {
   // Despachos por día (intensidad diaria, NO ocupación): promedio de días cerrados.
   const tractosActivosAyer=lastFullDayDate&&flotaTractoDia[dkey(lastFullDayDate)]?flotaTractoDia[dkey(lastFullDayDate)].size:0;
   const pctTractosAyer=totalTractocamiones>0?(tractosActivosAyer/totalTractocamiones)*100:0;
-  const despachosDiaCerrado=Object.entries(flotaTractoDia).filter(([k])=>{const dt=new Date(k+"T12:00:00");return dt.getFullYear()===curYear&&dt.getMonth()===curMonth&&dt.getDate()<now.getDate();});
+  let despachosDiaCerrado=Object.entries(flotaTractoDia).filter(([k])=>{const dt=new Date(k+"T12:00:00");return dt.getFullYear()===curYear&&dt.getMonth()===curMonth&&dt.getDate()<now.getDate();});
+  let despachosMesIdx=curMonth;
+  if(despachosDiaCerrado.length===0){
+    // Día 1 del mes: aún no hay días cerrados del mes en curso y el KPI mostraba
+    // "0 despachos/día" como si la flota estuviera detenida. Cae al mes anterior.
+    const pmD=curMonth===0?11:curMonth-1, pyD=curMonth===0?curYear-1:curYear;
+    despachosDiaCerrado=Object.entries(flotaTractoDia).filter(([k])=>{const dt=new Date(k+"T12:00:00");return dt.getFullYear()===pyD&&dt.getMonth()===pmD;});
+    despachosMesIdx=pmD;
+  }
+  const despachosMesLabel=MESES[despachosMesIdx];
   const diasConDatosTractos=despachosDiaCerrado.length;
   const tractosDespachadosDia=diasConDatosTractos>0?Math.round(despachosDiaCerrado.reduce((s,[,set])=>s+set.size,0)/diasConDatosTractos):0;
   const pctDespachadosDia=totalTractocamiones>0?(tractosDespachadosDia/totalTractocamiones)*100:0;
@@ -585,7 +663,10 @@ export function computeAll(data) {
   const ultimoViajeTracto={};
   flotaRows.forEach(r=>{const t=normPat(r._tracto);if(!t||t===comodinNorm||!padronTractoSet.has(t))return;if(!ultimoViajeTracto[t]||r._date>ultimoViajeTracto[t])ultimoViajeTracto[t]=r._date;});
   const hoyMid=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-  const tractosParadosLista=(data.flotaEquipos||[]).filter(r=>(r.tipoequipo||r.TipoEquipo||"").toUpperCase().includes("TRACTOCAMION")).map(r=>{
+  // Deduplicado por patente normalizada: una patente repetida en el padrón
+  // aparecía dos veces en la tabla e inflaba el conteo de parados.
+  const patentesVistas=new Set();
+  const tractosParadosLista=(data.flotaEquipos||[]).filter(r=>(r.tipoequipo||r.TipoEquipo||"").toUpperCase().includes("TRACTOCAMION")).filter(r=>{const p=normPat(r.patente||r.Patente);if(!p||patentesVistas.has(p))return false;patentesVistas.add(p);return true;}).map(r=>{
     const pat=normPat(r.patente||r.Patente);
     const ult=ultimoViajeTracto[pat]||null;
     const dias=ult?Math.round((hoyMid-new Date(ult.getFullYear(),ult.getMonth(),ult.getDate()))/86400000):null;
@@ -632,11 +713,15 @@ export function computeAll(data) {
   // tramos del año en curso, incluyendo tramos vacíos (son km realmente conducidos:
   // reposicionamiento de flota). Se excluye el comodín "TRANSPORTES BELLO". La cola
   // de baja utilización (km < 50% del promedio) destaca conductores subocupados.
+  // Clave normalizada (mayúsculas, espacios colapsados): "Juan Pérez" y
+  // "JUAN  PEREZ" son el mismo conductor; con la clave cruda se partían los km.
   const condMap={};
   flotaAnio.forEach(r=>{
-    const c=(r._cond||"").trim();
-    if(!c||c.toUpperCase().includes("TRANSPORTES BELLO"))return;
-    if(!condMap[c])condMap[c]={conductor:c,km:0,tramos:0,last:null};
+    const raw=(r._cond||"").trim();
+    if(!raw)return;
+    const c=normName(raw);
+    if(!c||c.includes("TRANSPORTES BELLO"))return;
+    if(!condMap[c])condMap[c]={conductor:raw,km:0,tramos:0,last:null};
     const e=condMap[c];e.km+=r._km;e.tramos++;
     if(!e.last||r._date>e.last)e.last=r._date;
   });
@@ -658,8 +743,11 @@ export function computeAll(data) {
   const saldoBancoSel={};
   bancosRows.forEach((r,idx)=>{
     const banco=r.Banco||r.banco;
-    const sf=parseNum(r["Saldo Final"]||r.saldo_final||r.SaldoFinal);
-    if(sf<=0)return;
+    const sfRaw=(r["Saldo Final"]??r.saldo_final??r.SaldoFinal??"").toString().trim();
+    // Solo se salta la CELDA VACÍA: un banco puede cerrar legítimamente en $0 o
+    // sobregirado, y saltar el <=0 dejaba vigente un saldo positivo viejo.
+    if(sfRaw==="")return;
+    const sf=parseNum(sfRaw);
     const fecha=parseDate(r.Fecha||r.fecha);
     const fTime=fecha?fecha.getTime():0;
     const prev=saldoBancoSel[banco];
@@ -672,7 +760,7 @@ export function computeAll(data) {
   const dapTrabajo=dapRows.filter(r=>getDapType(r)==="trabajo"),dapInversion=dapRows.filter(r=>getDapType(r)==="inversion"),dapCredito=dapRows.filter(r=>getDapType(r)==="credito");
   const totalDAPTrabajo=dapTrabajo.reduce((s,r)=>s+parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),0);const totalDAPInversion=dapInversion.reduce((s,r)=>s+parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),0);const totalDAPCredito=dapCredito.reduce((s,r)=>s+parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),0);const totalDAP=totalDAPTrabajo+totalDAPInversion+totalDAPCredito;
   const gananciaDAPTrabajo=dapTrabajo.reduce((s,r)=>s+parseNum(r.Ganancia||r.ganancia),0);const gananciaDAPInversion=dapInversion.reduce((s,r)=>s+parseNum(r.Ganancia||r.ganancia),0);const gananciaDAPCredito=dapCredito.reduce((s,r)=>s+parseNum(r.Ganancia||r.ganancia),0);const gananciaDAP=gananciaDAPTrabajo+gananciaDAPInversion+gananciaDAPCredito;
-  const dapProximos=dapRows.map(r=>({banco:r.Banco||r.banco,monto:parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),montoFinal:parseNum(r["Monto Final"]||r.MontoFinal||r.monto_final),vencimiento:parseDate(r.Vencimiento||r.vencimiento),tipo:r.Tipo||r.tipo,tasa:r.Tasa||r.tasa,_tipoNorm:getDapType(r)})).filter(r=>r.vencimiento&&r.vencimiento>=nowMid).sort((a,b)=>a.vencimiento-b.vencimiento).slice(0,10);
+  const dapProximos=dapRows.map(r=>({banco:r.Banco||r.banco,monto:parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),montoFinal:parseNum(r["Monto Final"]||r.MontoFinal||r.monto_final),ganancia:parseNum(r.Ganancia||r.ganancia),vencimiento:parseDate(r.Vencimiento||r.vencimiento),tipo:r.Tipo||r.tipo,tasa:r.Tasa||r.tasa,_tipoNorm:getDapType(r)})).filter(r=>r.vencimiento&&r.vencimiento>=nowMid).sort((a,b)=>a.vencimiento-b.vencimiento).slice(0,10);
   const fondosRows=(data.finFondos||[]).filter(r=>r.Fondo||r.fondo);const fondosSaldos=fondosRows.filter(r=>parseNum(r["Valor Actual"]||r.ValorActual||r.valor_actual)>0).map(r=>({fondo:r.Fondo||r.fondo,admin:r.Administradora||r.administradora,invertido:parseNum(r["Monto Invertido"]||r.MontoInvertido||r.monto_invertido),actual:parseNum(r["Valor Actual"]||r.ValorActual||r.valor_actual),rentPct:r["Rentabilidad %"]||r.rentabilidad_pct||""}));const totalFondos=fondosSaldos.reduce((s,r)=>s+r.actual,0);const totalInversionReal=totalDAPInversion+totalFondos;const totalInversiones=totalDAP+totalFondos;
   const calRows=(data.finCalendario||[]).map(r=>({fecha:parseDate(r.Fecha||r.fecha),monto:parseNum(r.Monto||r.monto),guardado:parseNum(r.Guardado||r.guardado),falta:parseNum(r.Falta||r.falta),concepto:r.Concepto||r.concepto||"",estado:r.Estado||r.estado||"",mes:r.Mes||r.mes,semana:r.Semana||r.semana})).filter(r=>r.fecha);
   const nextWeek=new Date(nowMid);nextWeek.setDate(nextWeek.getDate()+7);const compromisosProx=calRows.filter(r=>r.fecha>=nowMid&&r.fecha<=nextWeek).sort((a,b)=>a.fecha-b.fecha);const totalCompromisosProx=compromisosProx.reduce((s,r)=>s+r.monto,0);
@@ -687,9 +775,14 @@ export function computeAll(data) {
   for(let w=0;w<4;w++){
     const ws=new Date(weekStart0);ws.setDate(ws.getDate()+w*7);
     const we=new Date(ws);we.setDate(we.getDate()+6);we.setHours(23,59,59,999);
-    const compSemana=calRows.filter(r=>r.fecha>=ws&&r.fecha<=we);
+    // En la semana en curso solo cuentan compromisos/DAP desde HOY: los de
+    // lunes-a-ayer ya pasaron por caja (totalCaja los trae descontados) y
+    // volver a restarlos los contaba dos veces (falso "descubierto" a mitad
+    // de semana).
+    const desde=w===0&&nowMid>ws?nowMid:ws;
+    const compSemana=calRows.filter(r=>r.fecha>=desde&&r.fecha<=we);
     const compMonto=compSemana.reduce((s,r)=>s+r.monto,0);
-    const dapSemana=dapVigentes.filter(r=>r.tipo==="trabajo"&&r.vencimiento>=ws&&r.vencimiento<=we);
+    const dapSemana=dapVigentes.filter(r=>r.tipo==="trabajo"&&r.vencimiento>=desde&&r.vencimiento<=we);
     const dapMonto=dapSemana.reduce((s,r)=>s+r.montoFinal,0);
     const cajaInicio=cajaRestante;
     const ingresosSemana=cajaInicio+dapMonto;
@@ -703,6 +796,11 @@ export function computeAll(data) {
   const dapVigentesConTipo=(data.finDAP||[]).filter(r=>{const v=(r.Vigente||r.vigente||"").toString().toLowerCase();return v==="si"||v==="sí"||v==="yes";}).map(r=>({vencimiento:parseDate(r.Vencimiento||r.vencimiento),montoFinal:parseNum(r["Monto Final"]||r.MontoFinal||r.monto_final)||parseNum(r["Monto Inicial"]||r.MontoInicial||r.monto_inicial),banco:r.Banco||r.banco,tipo:getDapType(r)})).filter(r=>r.vencimiento);
   const next30=new Date(nowMid);next30.setDate(next30.getDate()+30);
   const comp30=calRows.filter(r=>r.fecha>=nowMid&&r.fecha<=next30).reduce((s,r)=>s+r.monto,0);
+  // Compromisos reales del calendario a 60 días (antes era comp30×2, una
+  // extrapolación sin etiquetar). Si el calendario solo está cargado ~30 días
+  // hacia adelante, este número es un piso, no una proyección.
+  const next60=new Date(nowMid);next60.setDate(next60.getDate()+60);
+  const comp60Total=calRows.filter(r=>r.fecha>=nowMid&&r.fecha<=next60).reduce((s,r)=>s+r.monto,0);
   const dapTrabajoVence30=dapVigentesConTipo.filter(r=>r.tipo==="trabajo"&&r.vencimiento>=nowMid&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
   const dapCreditoVence30=dapVigentesConTipo.filter(r=>r.tipo==="credito"&&r.vencimiento>=nowMid&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
   const dapInversionVence30=dapVigentesConTipo.filter(r=>r.tipo==="inversion"&&r.vencimiento>=nowMid&&r.vencimiento<=next30).reduce((s,r)=>s+r.montoFinal,0);
@@ -887,7 +985,16 @@ export function computeAll(data) {
   leasingDet.forEach(r=>{const k=r._banco||"—";if(!leasingEmisorMap[k])leasingEmisorMap[k]={emisor:k,operaciones:0,contratos:0,tractos:0,cuotaUF:0,cuotaCLP:0,cuotaIVA:0,deudaUF:0,deudaCLP:0,deudaIVA:0};const e=leasingEmisorMap[k];e.operaciones+=1;e.contratos+=r._tractos;e.tractos+=r._tractos;e.cuotaUF+=r._cuotaUF;e.cuotaCLP+=r._cuotaCLP;e.cuotaIVA+=r._cuotaIVA;e.deudaUF+=r._deudaUF;e.deudaCLP+=r._deudaCLP;e.deudaIVA+=r._deudaIVA;});
   const leasingEmisores=Object.values(leasingEmisorMap).sort((a,b)=>b.deudaCLP-a.deudaCLP);
   const lrParsed=data.leasingResumen||{emisores:[],totalRow:null,proxCuotas:[],proyeccion:[],refs:{}};
-  const leasingProxCuotas=lrParsed.proxCuotas;
+  // La pestaña Resumen calcula sus CLP con una UF propia (B2) que queda
+  // desactualizada respecto a la del Detalle (auto-CMF): el 01-07-2026 diferían
+  // 1,3% (40.173 vs 40.695). Se reescalan los CLP de las próximas cuotas a la
+  // UF implícita del Detalle para que todas las cifras hablen en la misma UF.
+  const ufImplicitaDetalle=leasingTotalUF>0?leasingTotalCuotaSinIVA/leasingTotalUF:null;
+  const leasingProxCuotas=lrParsed.proxCuotas.map(c=>{
+    if(!ufImplicitaDetalle||!(c.cuotaUF>0))return c;
+    const clp=c.cuotaUF*ufImplicitaDetalle;
+    return {...c,cuotaCLP:clp,cuotaIVA:clp*(1+IVA_RATE)};
+  });
   // ── Proyección mensual reconstruida desde el detalle (dinámica): arranca en el
   //    mes en curso y baja sola a medida que vencen las operaciones. Reemplaza la
   //    tabla estática de la planilla, que arrancaba en un mes fijo y no avanzaba. ──
@@ -970,17 +1077,23 @@ export function computeAll(data) {
   // Sumar todo hacía incomparable el $/km entre años (2026 salía ~30% más bajo).
   const kmPorMesActualArr=Array(12).fill(0), kmPorMesPrevArr=Array(12).fill(0);
   flotaRows.forEach(r=>{if(!r._cliente)return;const m=r._date.getMonth();if(r._date.getFullYear()===curYear)kmPorMesActualArr[m]+=r._km;else if(r._date.getFullYear()===prevYear)kmPorMesPrevArr[m]+=r._km;});
+  // Enero (mF=0) también entra: sus viajes son de DICIEMBRE del año previo
+  // (columna "anterior" del comparado); el año -2 no está disponible, así que
+  // la serie "anterior" de enero queda en null.
   const tarifaPorMes=[];
-  for(let mF=1;mF<12;mF++){
+  for(let mF=0;mF<12;mF++){
     const cerrado=mF<curMonth;
     const vAct=ventasPorMesComparado[mF]?.actual||0, vPrev=ventasPorMesComparado[mF]?.anterior||0;
-    const jAct=viajesPorMesComparado[mF-1]?.actual||0, jPrev=viajesPorMesComparado[mF-1]?.anterior||0;
+    const jAct=mF===0?(viajesPorMesComparado[11]?.anterior||0):(viajesPorMesComparado[mF-1]?.actual||0);
+    const jPrev=mF===0?0:(viajesPorMesComparado[mF-1]?.anterior||0);
+    const kmAct=mF===0?kmPorMesPrevArr[11]:kmPorMesActualArr[mF-1];
+    const kmPrev=mF===0?0:kmPorMesPrevArr[mF-1];
     tarifaPorMes.push({
       mes:MESES[mF],
       actual:cerrado&&vAct>0&&jAct>0?vAct/jAct:null,
       anterior:vPrev>0&&jPrev>0?vPrev/jPrev:null,
-      actualKm:cerrado&&vAct>0&&kmPorMesActualArr[mF-1]>0?vAct/kmPorMesActualArr[mF-1]:null,
-      anteriorKm:vPrev>0&&kmPorMesPrevArr[mF-1]>0?vPrev/kmPorMesPrevArr[mF-1]:null,
+      actualKm:cerrado&&vAct>0&&kmAct>0?vAct/kmAct:null,
+      anteriorKm:vPrev>0&&kmPrev>0?vPrev/kmPrev:null,
     });
   }
 
@@ -1028,5 +1141,5 @@ export function computeAll(data) {
   const histRows=parseHistorico(data.historico);
   const comparativas=computeComparativas(histRows,now);
 
-  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total:comp30*2,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,alertasClienteDiag,diasTranscurridosMes,diasTotalesMes,totalMesActualBruto,leasingDeudaTotalIVA,creditoMontoOriginal,creditoCuotasGracia,concentracionTop2,tarifaPorMes,cumplimientoMensual,servicioDeudaMensual,frescuraFuentes,tractosParados30,flotaOperativa,pctOcupacionTractosOperativa,kmMesAnteriorCorte,topRutas,rutasDistintas,rutasViajesTotal,rutasKmTotal,concentracionTop5Rutas,topConductores,conductoresConViajes,kmPromedioConductor,conductoresBajaUtilizacion,genPorCamionPorMes,genPorCamionMensual,genPorCamionAnual,genPorCamionYTD,camionesOperativosProm,tractosOperativosPorMes,genPorCamionMesEnCurso,genMesesCerradosN};
+  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,viajesAyerLabel,despachosMesLabel,totalMesAnteriorCorte,ventasDiaCorte,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,alertasClienteDiag,diasTranscurridosMes,diasTotalesMes,totalMesActualBruto,leasingDeudaTotalIVA,creditoMontoOriginal,creditoCuotasGracia,concentracionTop2,tarifaPorMes,cumplimientoMensual,servicioDeudaMensual,frescuraFuentes,tractosParados30,flotaOperativa,pctOcupacionTractosOperativa,kmMesAnteriorCorte,topRutas,rutasDistintas,rutasViajesTotal,rutasKmTotal,concentracionTop5Rutas,topConductores,conductoresConViajes,kmPromedioConductor,conductoresBajaUtilizacion,genPorCamionPorMes,genPorCamionMensual,genPorCamionAnual,genPorCamionYTD,camionesOperativosProm,tractosOperativosPorMes,genPorCamionMesEnCurso,genMesesCerradosN};
 }

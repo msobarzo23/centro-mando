@@ -1,11 +1,32 @@
-import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from "react";
+import { Component, useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from "react";
 import { RefreshCw, Sun, Moon, Menu, X, FileDown, Maximize2, Minimize2, AlertTriangle } from "lucide-react";
 import { CSV, AUTO_REFRESH_MIN, TABS, themes } from "./constants.js";
 import { fetchCSV, fetchFinCSV, fetchRawCSV, parseLeasingResumen } from "./services/fetchData.js";
-import { auditAll } from "./services/columnCheck.js";
+import { auditAll, LABELS } from "./services/columnCheck.js";
 import { computeAll } from "./services/compute.js";
 import HomeView from "./views/HomeView.jsx";
 import IndicadoresBanner from "./components/IndicadoresBanner.jsx";
+
+// Sin esto, cualquier excepción de render (un dato inesperado, un chunk viejo
+// tras un deploy con la pestaña abierta en modo TV) desmontaba la app entera y
+// dejaba la pantalla en blanco, sin pista para un usuario no técnico.
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("Error de render:", error, info); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    const T = this.props.T;
+    return (
+      <div style={{padding:"40px 24px",textAlign:"center",color:T.tx}}>
+        <AlertTriangle size={28} color={T.amber} style={{marginBottom:10}}/>
+        <div style={{fontSize:15,fontWeight:700,marginBottom:6}}>Esta vista tuvo un problema al dibujarse</div>
+        <div style={{fontSize:12,color:T.txM,marginBottom:16}}>Suele resolverse recargando la página (puede haber una versión nueva del dashboard).</div>
+        <button onClick={()=>window.location.reload()} style={{background:T.accentBg,border:`1px solid ${T.accent}55`,borderRadius:8,cursor:"pointer",color:T.accent,padding:"8px 18px",fontSize:13,fontWeight:600}}>Recargar</button>
+      </div>
+    );
+  }
+}
 
 const ResumenView = lazy(() => import("./views/ResumenView.jsx"));
 const VentasView = lazy(() => import("./views/VentasView.jsx"));
@@ -47,9 +68,15 @@ export default function App() {
     setDark(d => { const n = !d; try { localStorage.setItem("cm-theme", n ? "dark" : "light"); } catch {} return n; });
   };
 
+  const loadSeqRef = useRef(0);
+  const dataRef = useRef({});
+
   const loadData = useCallback(async () => {
+    // Token de secuencia: refresh manual + auto-refresh + visibilitychange pueden
+    // solaparse, y sin esto la request que TERMINA última (aunque sea la más
+    // vieja o venga con vacíos por timeout) pisaba a la más fresca.
+    const seq = ++loadSeqRef.current;
     setLoading(true);
-    setFetchError(null);
     try {
       const [ventas,viajes,flotaViajes,flotaEquipos,expediciones,conductoresActivos,historico] = await Promise.all([
         fetchCSV(CSV.ventas), fetchCSV(CSV.viajes), fetchCSV(CSV.flotaViajes),
@@ -66,10 +93,31 @@ export default function App() {
         fetchRawCSV(CSV.leasingResumen),
         fetchCSV(CSV.credito),
       ]);
+      if (seq !== loadSeqRef.current) return; // partió una carga más nueva: descartar esta
       const leasingResumen = parseLeasingResumen(leasingResumenRaw);
+      const fresh = { ventas, viajes, finResumen, finBancos, finDAP, finCalendario, finFondos, flotaViajes, flotaEquipos, leasingDetalle, leasingResumen, credito, expediciones, conductoresActivos, historico };
       const allEmpty = [ventas,viajes,flotaViajes,flotaEquipos,finBancos].every(d => d.length === 0);
+      // Un fetch fallido llega como [] (los fetchers nunca rechazan). Si la
+      // planilla venía CON datos y ahora llega vacía, casi siempre es un fallo de
+      // red puntual del auto-refresh: se conservan los datos anteriores y se
+      // avisa, en vez de pisar la pantalla (y el PDF) con ceros silenciosos.
+      // finResumen se excluye del aviso: esa pestaña no está publicada como CSV.
+      const isEmpty = (k,v) => k==="leasingResumen"
+        ? !(v && ((v.emisores||[]).length || (v.proxCuotas||[]).length || (v.proyeccion||[]).length))
+        : !(Array.isArray(v) && v.length>0);
+      const prev = dataRef.current || {};
+      const nextData = {}; const caidas = [];
+      Object.entries(fresh).forEach(([k,v]) => {
+        if (isEmpty(k,v) && !isEmpty(k, prev[k])) { nextData[k]=prev[k]; if(k!=="finResumen") caidas.push(LABELS[k]||k); }
+        else {
+          nextData[k]=v;
+          if (isEmpty(k,v) && k!=="finResumen" && !allEmpty) caidas.push(LABELS[k]||k);
+        }
+      });
       if (allEmpty) setFetchError("No se pudieron cargar los datos. Verifica tu conexión o los permisos de las hojas.");
-      const nextData = { ventas, viajes, finResumen, finBancos, finDAP, finCalendario, finFondos, flotaViajes, flotaEquipos, leasingDetalle, leasingResumen, credito, expediciones, conductoresActivos, historico };
+      else if (caidas.length>0) setFetchError(`Estas planillas no se pudieron cargar: ${caidas.join(", ")}. Se muestran los últimos datos disponibles de cada una.`);
+      else setFetchError(null);
+      dataRef.current = nextData;
       setData(nextData);
       const warnings = auditAll(nextData);
       setColumnWarnings(warnings);
@@ -77,9 +125,9 @@ export default function App() {
       setLastUpdate(new Date());
     } catch (e) {
       console.error(e);
-      setFetchError("Error al conectar con las fuentes de datos. Los datos mostrados pueden estar desactualizados.");
+      if (seq === loadSeqRef.current) setFetchError("Error al conectar con las fuentes de datos. Los datos mostrados pueden estar desactualizados.");
     }
-    setLoading(false);
+    if (seq === loadSeqRef.current) setLoading(false);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -219,6 +267,7 @@ export default function App() {
         )}
 
         <main style={{flex:1,padding:presentation?"32px 40px":"20px 24px",maxWidth:presentation?1600:1200,margin:presentation?"0 auto":undefined,overflowX:"hidden"}}>
+          <ErrorBoundary key={tab} T={T}>
           <Suspense fallback={
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"60px 0",color:T.txM,fontSize:13,gap:10}}>
               <RefreshCw size={16} color={T.accent} style={{animation:"spin 1s linear infinite"}}/> Cargando vista…
@@ -235,6 +284,7 @@ export default function App() {
             {tab==="simcredito"&&<SimulacionCreditoView C={C} T={T}/>}
             {tab==="alertas"&&<AlertasView C={C} T={T}/>}
           </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
 

@@ -45,9 +45,13 @@ function computeHighlights(C) {
   }
 
   if (C.viajesAyer > 0 && C.viajesPorMes) {
-    const promDiario = C.viajesMesActual / C.dayOfMonth;
-    if (C.viajesAyer < promDiario * 0.7) {
-      items.push({ score:75, type:"warning", icon:TrendingDown, title:`Viajes bajos en ${C.lastFullDayLabel}`, text:`${C.viajesAyer} viajes vs promedio diario de ${Math.round(promDiario)} del mes` });
+    // Referencia: ritmo de los últimos 28 días (misma fuente que viajesAyer —
+    // viajes reales). Antes se comparaban TRAMOS de flota contra viajes y la
+    // alerta no podía dispararse nunca; a inicio de mes el promedio del mes
+    // parcial tampoco servía de norma.
+    const promDiario = C.ritmoDiaReciente || (C.dayOfMonth > 0 ? C.viajesMesActual / C.dayOfMonth : 0);
+    if (promDiario > 0 && C.viajesAyer < promDiario * 0.7) {
+      items.push({ score:75, type:"warning", icon:TrendingDown, title:`Viajes bajos en ${C.viajesAyerLabel||C.lastFullDayLabel}`, text:`${C.viajesAyer} viajes vs ritmo reciente de ${Math.round(promDiario)}/día` });
     }
   }
 

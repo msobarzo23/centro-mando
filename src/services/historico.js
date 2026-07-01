@@ -7,15 +7,30 @@ const ymd = (d) => {
   return `${y}-${m}-${day}`;
 };
 
+// El 01-06-2026 se cargaron a la planilla de ventas todas las facturas de 2023
+// ($54.139.897.483): el acumulado del snapshot saltó ese monto de un día para
+// otro sin que fueran ventas nuevas, y cualquier variación día/semana/mes que
+// cruce esa fecha queda distorsionada (junio salía ~10× su valor real). Para
+// dejar toda la serie en la MISMA base, a los snapshots anteriores al salto se
+// les suma el monto incorporado. Si vuelve a pasar (otro backfill), agregar
+// una entrada acá con la fecha del salto y el monto agregado.
+const REBASES_VENTAS = [
+  { antesDe: "2026-06-01", ajuste: 54139897483 },
+];
+
 export function parseHistorico(rawRows) {
   return (rawRows || [])
-    .map(r => ({
-      fecha: (r.fecha || "").trim(),
-      viajes: parseNum(r.viajes_total),
-      ventas: parseNum(r.ventas_total_neto),
-      tractos: parseNum(r.tractos_activos),
-      conductores: parseNum(r.conductores_activos),
-    }))
+    .map(r => {
+      const fecha = (r.fecha || "").trim();
+      const ajuste = REBASES_VENTAS.reduce((s, rb) => s + (fecha && fecha < rb.antesDe ? rb.ajuste : 0), 0);
+      return {
+        fecha,
+        viajes: parseNum(r.viajes_total),
+        ventas: parseNum(r.ventas_total_neto) + ajuste,
+        tractos: parseNum(r.tractos_activos),
+        conductores: parseNum(r.conductores_activos),
+      };
+    })
     .filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.fecha))
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
 }

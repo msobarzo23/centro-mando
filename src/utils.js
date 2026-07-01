@@ -17,7 +17,7 @@ export const parseDate = (s) => {
   if(!s)return null; const str=String(s).trim();
   let p=str.split("/");
   if(p.length===3){const[a,b,c]=p.map(Number);if(c>1000)return new Date(c,b-1,a);if(a>1000)return new Date(a,b-1,c);}
-  p=str.split("-");if(p.length===3){const[a,b,c]=p.map(Number);if(a>1000)return new Date(a,b-1,c);}
+  p=str.split("-");if(p.length===3){const[a,b,c]=p.map(Number);if(a>1000)return new Date(a,b-1,c);if(c>1000)return new Date(c,b-1,a);}
   const d=new Date(str);return isNaN(d)?null:d;
 };
 
