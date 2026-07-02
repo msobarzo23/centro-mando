@@ -356,28 +356,47 @@ export function computeAll(data) {
   // diagnóstico; si varias razones sociales calzan el nombre corto, se suman.
   const ventasClienteKeys = Object.keys(ventasByClienteMesPrev);
   const ventasCoreMap = new Map(ventasClienteKeys.map(k => [k, clienteCoreTokens(k)]));
-  const ventasArrDeViajesKey = (vKey) => {
-    if (ventasByClienteMesPrev[vKey]) return ventasByClienteMesPrev[vKey];
+  const matchVentasKeys = (vKey) => {
+    if (ventasByClienteMesPrev[vKey]) return [vKey];
     const vc = clienteCoreTokens(vKey);
-    if (!vc.length) return null;
+    if (!vc.length) return [];
     let m = ventasClienteKeys.filter(fk => { const fc = ventasCoreMap.get(fk); return fc.length === vc.length && tokensPrefix(vc, fc); });
     if (!m.length) m = ventasClienteKeys.filter(fk => tokensPrefix(vc, ventasCoreMap.get(fk)));
     if (!m.length) m = ventasClienteKeys.filter(fk => tokensPrefix(ventasCoreMap.get(fk), vc));
-    if (!m.length) return null;
-    const out = Array(12).fill(0);
-    m.forEach(fk => ventasByClienteMesPrev[fk].forEach((v, i) => { out[i] += v; }));
-    return out;
+    return m;
   };
+
+  // Varias claves de viajes pueden calzar la MISMA razón social: ORICA, ORICA
+  // ARGENTINA y ORICA PERU facturan todas bajo "ORICA CHILE S.A". Si cada clave
+  // heredara las ventas completas, una con 1-4 viajes/mes queda con tarifa de
+  // cientos de millones por viaje y las mismas ventas se cuentan varias veces en
+  // la tarifa global (jul-2026: +$0,5-1,0 mil M de "esperado" fantasma por mes).
+  // La tarifa se calcula por GRUPO: claves de viajes unidas por razones sociales
+  // compartidas; ventas del grupo (una sola vez) ÷ viajes de todo el grupo.
+  const viajesClienteKeys = Object.keys(viajesByClienteMesPrev);
+  const matchesPorViajesKey = new Map(viajesClienteKeys.map(k => [k, matchVentasKeys(k)]));
+  const grupoParent = new Map();
+  const grupoFind = (x) => { let r = x; while (grupoParent.get(r) !== r) r = grupoParent.get(r); while (grupoParent.get(x) !== r) { const nx = grupoParent.get(x); grupoParent.set(x, r); x = nx; } return r; };
+  const grupoUnion = (a, b) => { const ra = grupoFind(a), rb = grupoFind(b); if (ra !== rb) grupoParent.set(ra, rb); };
+  viajesClienteKeys.forEach(k => grupoParent.set("v:" + k, "v:" + k));
+  matchesPorViajesKey.forEach((fks, k) => fks.forEach(fk => { if (!grupoParent.has("f:" + fk)) grupoParent.set("f:" + fk, "f:" + fk); grupoUnion("v:" + k, "f:" + fk); }));
+  const grupos = new Map();
+  viajesClienteKeys.forEach(k => { const r = grupoFind("v:" + k); if (!grupos.has(r)) grupos.set(r, { vKeys: [], fKeys: new Set() }); grupos.get(r).vKeys.push(k); });
+  matchesPorViajesKey.forEach((fks, k) => { const g = grupos.get(grupoFind("v:" + k)); fks.forEach(fk => g.fKeys.add(fk)); });
 
   const tasaPorCliente = {};
   let globalVentasLagged=0, globalViajesLagged=0;
-  Object.keys(viajesByClienteMesPrev).forEach(k=>{
-    const vj=viajesByClienteMesPrev[k],vt=ventasArrDeViajesKey(k)||Array(12).fill(0);
+  grupos.forEach(g => {
+    const vj = Array(12).fill(0), vt = Array(12).fill(0);
+    g.vKeys.forEach(k => viajesByClienteMesPrev[k].forEach((v, i) => { vj[i] += v; }));
+    g.fKeys.forEach(fk => ventasByClienteMesPrev[fk].forEach((v, i) => { vt[i] += v; }));
     let sumViajes=0,sumVentas=0,mesesConData=0;
     for(let m=0;m<11;m++){if(vj[m]>0&&vt[m+1]>0){sumViajes+=vj[m];sumVentas+=vt[m+1];mesesConData++;}}
-    if(mesesConData>=3&&sumViajes>0)tasaPorCliente[k]={tasa:sumVentas/sumViajes,meses:mesesConData,confianza:"alta"};
-    else if(mesesConData>=1&&sumViajes>0)tasaPorCliente[k]={tasa:sumVentas/sumViajes,meses:mesesConData,confianza:"baja"};
-    if(sumViajes>0){globalVentasLagged+=sumVentas;globalViajesLagged+=sumViajes;}
+    if(sumViajes>0&&mesesConData>=1){
+      const t={tasa:sumVentas/sumViajes,meses:mesesConData,confianza:mesesConData>=3?"alta":"baja"};
+      g.vKeys.forEach(k=>{tasaPorCliente[k]=t;});
+      globalVentasLagged+=sumVentas;globalViajesLagged+=sumViajes;
+    }
   });
   const tasaGlobal = globalViajesLagged>0 ? globalVentasLagged/globalViajesLagged : 0;
 
@@ -443,16 +462,24 @@ export function computeAll(data) {
   //    real de los DEMÁS meses cerrados (se excluye el propio mes para no ser
   //    circular). Si se facturó lo que daban los viajes pero igual quedó bajo el
   //    estacional, fue menor demanda / error de estimación, no facturación.
+  // El desvío se mide contra el esperado SIN el reajuste MEPCO teórico: la
+  // tarifa implícita facturada (ventas mes f ÷ viajes mes f-1) siguió PLANA
+  // tras el alza (~$1,35-1,43M/viaje todo 2026, igual que 2025; medido jul-2026),
+  // así que sumar el ~17% teórico marcaba todos los meses "revisar facturación"
+  // cuando lo facturado sí calzaba con los viajes. El alza contratada no cobrada
+  // no desaparece: se reporta aparte como `brechaMepco` por mes.
   const TOLERANCIA_CUMPLIMIENTO=0.03; // ±3% se considera "en línea"
   const cumplimientoMensual=closedMonths.map(mNum=>{
     const i=mNum-1;
     const real=ventasPorMesComparado[i]?.actual||0;
-    const espViajes=facturacionProyectadaPorViajes[i]>0?facturacionProyectadaPorViajes[i]:null;
+    const espViajes=facturacionProyViajesSinMepco[i]>0?facturacionProyViajesSinMepco[i]:null;
+    const upliftMes=upliftPorMes[mNum]||0;
+    const brechaMepco=espViajes!=null&&upliftMes>0?espViajes*upliftMes:null;
     const otros=closedMonths.filter(m=>m!==mNum);
     const sumAct=otros.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.actual||0),0);
     const sumAnt=otros.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.anterior||0),0);
     const anterior=ventasPorMesComparado[i]?.anterior||0;
-    const espEstacional=otros.length>0&&sumAnt>0&&anterior>0?anterior*(sumAct/sumAnt)*(1+(upliftPorMes[mNum]||0)):null;
+    const espEstacional=otros.length>0&&sumAnt>0&&anterior>0?anterior*(sumAct/sumAnt):null;
     const base=espViajes!=null?espViajes:espEstacional;
     const desvio=base!=null?real-base:null;
     const desvioPct=base?((real-base)/base)*100:null;
@@ -460,7 +487,7 @@ export function computeAll(data) {
     if(espViajes!=null&&real<espViajes*(1-TOLERANCIA_CUMPLIMIENTO))lectura="facturacion";
     else if(espEstacional!=null&&real<espEstacional*(1-TOLERANCIA_CUMPLIMIENTO))lectura="estimacion";
     else if(base!=null&&real>base*(1+TOLERANCIA_CUMPLIMIENTO))lectura="superado";
-    return {mes:MESES[i],mesNum:mNum,real,espViajes,espEstacional,desvio,desvioPct,lectura};
+    return {mes:MESES[i],mesNum:mNum,real,espViajes,espEstacional,brechaMepco,desvio,desvioPct,lectura};
   });
 
   // Agrupado por nombre NORMALIZADO (dos escrituras del mismo cliente no deben
