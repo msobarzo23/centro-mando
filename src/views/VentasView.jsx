@@ -347,18 +347,17 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
             {(()=>{
               const conBrecha=C.cumplimientoMensual.filter(r=>r.brechaMepco!=null&&r.brechaMepco>0);
               if(!conBrecha.length)return null;
-              const totalBrecha=conBrecha.reduce((s,r)=>s+r.brechaMepco,0);
               return(
                 <div style={{marginTop:10,padding:"10px 12px",background:T.violetBg,border:`1px solid ${T.violet}33`,borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
-                  <strong style={{color:T.violet}}>⚡ Reajuste MEPCO no reflejado en lo facturado: </strong>
-                  {conBrecha.map(r=>`${r.mes} +${fmtM(r.brechaMepco)}`).join(" · ")} (total {fmtM(totalBrecha)}).
-                  Es lo que el esperado subiría si el alza contratada se estuviera cobrando; la tarifa implícita por viaje sigue al nivel del año pasado — conviene validar el cobro del reajuste con los clientes.
+                  <strong style={{color:T.violet}}>⚡ Reajuste MEPCO incluido en el esperado: </strong>
+                  {conBrecha.map(r=>`${r.mes} +${fmtM(r.brechaMepco)}`).join(" · ")}.
+                  Desde la factura de mayo el esperado por viajes usa la tarifa contratada con el alza vigente; la tarifa implícita facturada sigue casi al nivel del año pasado, así que un desvío negativo en estos meses puede ser tanto viajes sin facturar como reajuste aún no cobrado a los clientes.
                 </div>
               );
             })()}
             <div style={{marginTop:10,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
               <strong style={{color:T.tx}}>Cómo leer esto: </strong>
-              Para cada mes ya cerrado se compara lo facturado contra dos referencias. <strong style={{color:T.teal}}>Esperado por viajes</strong> = viajes reales del mes anterior × tarifa efectivamente facturada de cada cliente (sin sumar el reajuste MEPCO teórico, que se muestra aparte): si el real quedó por debajo, hay viajes que valían más de lo que se facturó — <strong style={{color:T.red}}>revisar viajes sin facturar</strong>. <strong>Esperado estacional</strong> = el mismo mes del año pasado escalado por el crecimiento real del resto del año: si se cumplió lo de los viajes pero no esto, fue menor demanda o error de estimación, no un problema de facturación. El desvío se mide contra el esperado por viajes.
+              Para cada mes ya cerrado se compara lo facturado contra dos referencias. <strong style={{color:T.teal}}>Esperado por viajes</strong> = viajes reales del mes anterior × tarifa contratada de cada cliente (desde mayo incluye el reajuste MEPCO vigente): si el real quedó por debajo, hay viajes que valían más de lo que se facturó — <strong style={{color:T.red}}>revisar viajes sin facturar</strong>. <strong>Esperado estacional</strong> = el mismo mes del año pasado escalado por el crecimiento real del resto del año: si se cumplió lo de los viajes pero no esto, fue menor demanda o error de estimación, no un problema de facturación. El desvío se mide contra el esperado por viajes.
             </div>
           </SectionCard>
         );

@@ -462,19 +462,20 @@ export function computeAll(data) {
   //    real de los DEMÁS meses cerrados (se excluye el propio mes para no ser
   //    circular). Si se facturó lo que daban los viajes pero igual quedó bajo el
   //    estacional, fue menor demanda / error de estimación, no facturación.
-  // El desvío se mide contra el esperado SIN el reajuste MEPCO teórico: la
-  // tarifa implícita facturada (ventas mes f ÷ viajes mes f-1) siguió PLANA
-  // tras el alza (~$1,35-1,43M/viaje todo 2026, igual que 2025; medido jul-2026),
-  // así que sumar el ~17% teórico marcaba todos los meses "revisar facturación"
-  // cuando lo facturado sí calzaba con los viajes. El alza contratada no cobrada
-  // no desaparece: se reporta aparte como `brechaMepco` por mes.
+  // Decisión de Miguel (2026-07-02): el "esperado por viajes" usa la tarifa
+  // CONTRATADA, o sea incluye el reajuste MEPCO vigente desde la factura de
+  // mayo (viajes de abril en adelante). Si lo facturado queda por debajo en
+  // esos meses, la tabla debe acusarlo: es facturación pendiente y/o alza
+  // contratada no cobrada (la tarifa implícita facturada sigue casi al nivel
+  // de 2025, medido jul-2026). `brechaMepco` desglosa cuánto del esperado es
+  // reajuste, para que la nota bajo la tabla explique el desvío post-alza.
   const TOLERANCIA_CUMPLIMIENTO=0.03; // ±3% se considera "en línea"
   const cumplimientoMensual=closedMonths.map(mNum=>{
     const i=mNum-1;
     const real=ventasPorMesComparado[i]?.actual||0;
-    const espViajes=facturacionProyViajesSinMepco[i]>0?facturacionProyViajesSinMepco[i]:null;
+    const espViajes=facturacionProyectadaPorViajes[i]>0?facturacionProyectadaPorViajes[i]:null;
     const upliftMes=upliftPorMes[mNum]||0;
-    const brechaMepco=espViajes!=null&&upliftMes>0?espViajes*upliftMes:null;
+    const brechaMepco=facturacionProyViajesSinMepco[i]>0&&upliftMes>0?facturacionProyViajesSinMepco[i]*upliftMes:null;
     const otros=closedMonths.filter(m=>m!==mNum);
     const sumAct=otros.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.actual||0),0);
     const sumAnt=otros.reduce((s,m)=>s+(ventasPorMesComparado[m-1]?.anterior||0),0);
