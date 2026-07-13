@@ -36,7 +36,11 @@ export const fetchFinCSV = (url, knownHeaders) => new Promise((resolve) => {
         // y un título que empezara con número ("2026 RESUMEN") NO cortaba y sumaba
         // dos veces las filas de la tabla siguiente.
         const filled = row.map((c, ci) => ({ ci, v: String(c == null ? "" : c).trim() })).filter(x => x.v !== "");
-        const esTitulo = (v) => /[A-ZÁÉÍÓÚÑ]/.test(v) && !/[a-záéíóúñ]/.test(v);
+        // El paréntesis aclaratorio no invalida un título: el panel de FF.MM. abre
+        // secciones como "HISTORIAL DE MOVIMIENTOS (aportes y rescates)" y, con las
+        // minúsculas del paréntesis, no cortaba — los aportes históricos entraban
+        // desalineados como fondos vigentes y el total se duplicaba.
+        const esTitulo = (v) => { const core = v.replace(/\([^)]*\)/g, "").trim(); return /[A-ZÁÉÍÓÚÑ]/.test(core) && !/[a-záéíóúñ]/.test(core); };
         if (filled.length === 1 && filled[0].ci === 0 && esTitulo(filled[0].v)) break;
         // Filas de totales ("TOTALES", "TOTALES ACTIVOS", …) NO son datos: si entran,
         // los montos se cuentan dos veces. Hoy las neutralizan filtros aguas abajo

@@ -20,10 +20,11 @@ export default function FinanzasView({ C, T }) {
   const tipoColor = { trabajo:T.accent, inversion:T.green, credito:T.amber };
   const tipoBg = { trabajo:T.accentBg, inversion:T.greenBg, credito:T.amberBg };
 
-  // Capacidad de pago del leasing: inversión disponible (DAP Inversión + FF.MM.)
-  // menos la deuda total de leasing. El crédito Itaú NO se considera (decisión de
-  // gerencia). Responde: "si liquidáramos las inversiones hoy, ¿alcanza para pagar
-  // todo el leasing?".
+  // Capacidad de pago del leasing: inversión disponible (DAP Inversión + DAP
+  // Crédito + FF.MM.; el DAP Crédito es plata destinada a invertir) menos la deuda
+  // total de leasing. El crédito Itaú NO se considera (decisión de gerencia).
+  // Responde: "si liquidáramos las inversiones hoy, ¿alcanza para pagar todo el
+  // leasing?".
   const invDisponible = C.totalInversionReal || 0;
   // Deuda c/IVA: es lo que efectivamente saldría de caja si se pagara todo el
   // leasing hoy. Comparar contra la deuda s/IVA hacía ver la posición mejor de lo real.
@@ -63,7 +64,7 @@ export default function FinanzasView({ C, T }) {
             </div>
           </div>}
         />
-        <KpiCard icon={Building2} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.green} colorBg={T.greenBg}/>
+        <KpiCard icon={Building2} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + DAP Créd. ${fmtM(C.totalDAPCredito)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.green} colorBg={T.greenBg}/>
         <KpiCard icon={Calendar} label="Compromisos mes" value={fmtM(C.totalCompromisosMes)} T={T} sub={`Guardado: ${fmtM(C.totalGuardadoMes)}`} color={T.amber} colorBg={T.amberBg}/>
       </div>
 
@@ -73,7 +74,7 @@ export default function FinanzasView({ C, T }) {
           <div style={{flex:"1 1 180px",background:T.greenBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.green}22`}}>
             <div style={{fontSize:11,color:T.green,fontWeight:600,marginBottom:4}}>INVERSIÓN DISPONIBLE</div>
             <div style={{fontSize:22,fontWeight:800,color:T.tx,letterSpacing:-0.5}}>{fmtM(invDisponible)}</div>
-            <div style={{fontSize:11,color:T.txD,marginTop:4}}>DAP Inversión ({fmtM(C.totalDAPInversion)}) + FF.MM. ({fmtM(C.totalFondos)})</div>
+            <div style={{fontSize:11,color:T.txD,marginTop:4}}>DAP Inversión ({fmtM(C.totalDAPInversion)}) + DAP Crédito ({fmtM(C.totalDAPCredito)}) + FF.MM. ({fmtM(C.totalFondos)})</div>
           </div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800,color:T.txM,flex:"0 0 auto"}}>−</div>
           <div style={{flex:"1 1 180px",background:T.redBg,borderRadius:10,padding:"12px 16px",border:`1px solid ${T.red}22`}}>
@@ -94,7 +95,7 @@ export default function FinanzasView({ C, T }) {
             : <>Las inversiones de hoy <strong>no alcanzan</strong> a cubrir todo el leasing: faltarían <strong style={{color:resColor}}>{fmtM(Math.abs(posicionNeta))}</strong>{coberturaLeasing!==null&&<> (cubren el {coberturaLeasing.toLocaleString("es-CL",{maximumFractionDigits:0})}% de la deuda)</>}.</>}
         </div>
         <div style={{marginTop:10,fontSize:11.5,color:T.txD,lineHeight:1.5}}>
-          Inversión disponible = solo DAP de Inversión + Fondos mutuos. <strong>No</strong> incluye la caja en bancos, el DAP de trabajo ni la reserva del DAP de crédito. El crédito Itaú no se considera en este cálculo.
+          Inversión disponible = DAP de Inversión + DAP de Crédito (destinado a invertir) + Fondos mutuos. <strong>No</strong> incluye la caja en bancos ni el DAP de trabajo. El crédito Itaú no se considera en este cálculo.
         </div>
       </SectionCard>
 

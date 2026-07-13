@@ -153,7 +153,7 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
             </div>
           </div>}
         />
-        <KpiCard icon={PiggyBank} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.purple} colorBg={T.purpleBg}/>
+        <KpiCard icon={PiggyBank} label="Inversión real" value={fmtM(C.totalInversionReal)} T={T} sub={`DAP Inv. ${fmtM(C.totalDAPInversion)} + DAP Créd. ${fmtM(C.totalDAPCredito)} + FF.MM. ${fmtM(C.totalFondos)}`} color={T.purple} colorBg={T.purpleBg}/>
       </div>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
