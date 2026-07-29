@@ -14,6 +14,7 @@ import {
   MEPCO_HISTORICO_CORTE_YEAR, MEPCO_HISTORICO_CORTE_MONTH, MEPCO_HISTORICO_CORTE_LABEL,
 } from "../data/mepcoReajustes.js";
 import { POZO_COPEC_TOTALES, POZO_COPEC_POR_MES, POZO_COPEC_META } from "../data/copecSobrecosto.js";
+import { TARIFAS, EXTRAS_PCT, TARIFARIO_META } from "../data/tarifario.js";
 
 // Cuenta cuántas cuotas de leasing faltan por pagar en un contrato: número de
 // vencimientos (el día `diaVcto` de cada mes) desde hoy hasta la fecha de término,
@@ -1152,6 +1153,46 @@ export function computeAll(data) {
   const camionesOperativosProm=genMesesCerradosN?Math.round(genCerrados.reduce((s,g)=>s+g.camiones,0)/genMesesCerradosN):0;
   const genPorCamionMesEnCurso=(genPorCamionPorMes[curMonth]&&genPorCamionPorMes[curMonth].valor!=null)?genPorCamionPorMes[curMonth]:null;
 
+  // ══════════ INGRESO ESTIMADO DEL MES (tarifario TMS) ══════════
+  // Valoriza cada viaje del mes EN CURSO el día que ocurre, con la última tarifa
+  // conocida de su combinación cliente+origen+destino+equipo (informes de
+  // facturación del TMS consolidados en src/data/tarifario.js). NO es facturación:
+  // anticipa en ~1 mes la plata de viajes que aún no se informan ni facturan.
+  // Fallback sin tipo de equipo; % de extras (estadía/escolta/…) histórico por
+  // cliente; los VIAJE ANULADO no suman. Sesgo conocido: si hubo reajuste de
+  // tarifas reciente (MEPCO), la "última tarifa" queda corta — subestima.
+  const ingresoEstimado=(()=>{
+    const nT=(s)=>String(s||"").replace(/\s+/g," ").trim().toUpperCase();
+    const exact=new Map(), flex=new Map();
+    TARIFAS.forEach(([cli,ori,des,eq,t,f])=>{
+      exact.set(`${cli}|${ori}|${des}|${eq}`,t);
+      const kf=`${cli}|${ori}|${des}`; const prev=flex.get(kf);
+      if(!prev||f>prev.f) flex.set(kf,{t,f});
+    });
+    const delMes=viajesMesActual.filter(r=>nT(r.Estado||r.estado)!=="VIAJE ANULADO");
+    const porDiaMap={}, porCli={};
+    let totalEst=0, cubiertos=0;
+    delMes.forEach(r=>{
+      const cli=nT(r._cliente), ori=nT(r.origen||r.Origen), des=nT(r.destino||r.Destino), eq=nT(r._equipo);
+      let t=exact.get(`${cli}|${ori}|${des}|${eq}`);
+      if(t==null){const fx=flex.get(`${cli}|${ori}|${des}`); t=fx?fx.t:null;}
+      if(!porCli[cli])porCli[cli]={name:r._cliente,viajes:0,cubiertos:0,estimado:0};
+      porCli[cli].viajes++;
+      if(t!=null){
+        const conExtras=t*(1+(EXTRAS_PCT[cli]??EXTRAS_PCT._global??0));
+        totalEst+=conExtras; cubiertos++;
+        porCli[cli].cubiertos++; porCli[cli].estimado+=conExtras;
+        const d=r._date.getDate(); porDiaMap[d]=(porDiaMap[d]||0)+conExtras;
+      }
+    });
+    const porDia=Object.entries(porDiaMap).map(([d,m])=>({dia:+d,monto:m})).sort((a,b)=>a.dia-b.dia);
+    const topClientes=Object.values(porCli).sort((a,b)=>b.estimado-a.estimado);
+    // Ritmo diario con días COMPLETOS: el día en curso va a medias y lo hundiría.
+    const diasCompletos=porDia.filter(p=>p.dia<now.getDate());
+    const promedioDiario=diasCompletos.length?diasCompletos.reduce((s,p)=>s+p.monto,0)/diasCompletos.length:0;
+    return {total:totalEst,viajes:delMes.length,cubiertos,cobertura:delMes.length?cubiertos/delMes.length:0,porDia,topClientes,promedioDiario,meta:TARIFARIO_META};
+  })();
+
   // ══════════ FRESCURA DE DATOS ══════════
   // Hasta qué día llegan los datos de cada fuente. Distinto de "hace cuánto se
   // descargó el CSV": una planilla puede descargarse ahora y venir atrasada días.
@@ -1172,5 +1213,5 @@ export function computeAll(data) {
   const histRows=parseHistorico(data.historico);
   const comparativas=computeComparativas(histRows,now);
 
-  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,viajesAyerLabel,despachosMesLabel,totalMesAnteriorCorte,ventasDiaCorte,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,alertasClienteDiag,diasTranscurridosMes,diasTotalesMes,totalMesActualBruto,leasingDeudaTotalIVA,creditoMontoOriginal,creditoCuotasGracia,concentracionTop2,tarifaPorMes,cumplimientoMensual,servicioDeudaMensual,frescuraFuentes,tractosParados30,flotaOperativa,pctOcupacionTractosOperativa,kmMesAnteriorCorte,topRutas,rutasDistintas,rutasViajesTotal,rutasKmTotal,concentracionTop5Rutas,topConductores,conductoresConViajes,kmPromedioConductor,conductoresBajaUtilizacion,genPorCamionPorMes,genPorCamionMensual,genPorCamionAnual,genPorCamionYTD,camionesOperativosProm,tractosOperativosPorMes,genPorCamionMesEnCurso,genMesesCerradosN};
+  return {histRows,comparativas,totalMesActual,totalMesAnterior,ventasPorMes,topClientes,ventasAnoActual,ventasAnoAnterior,ventasRows,viajesMesActual:viajesMesActual.length,viajesMesAnteriorCount:viajesMesAnterior.length,viajesCorteActual,viajesCorteAnterior,viajesPorMes,viajesPorMesComparado,topClientesViajes,viajesPorEquipo,dayOfMonth,totalCaja,saldosBancos,totalDAP,gananciaDAP,dapProximos,totalFondos,fondosSaldos,totalInversiones,totalDAPTrabajo,totalDAPInversion,totalDAPCredito,gananciaDAPTrabajo,gananciaDAPInversion,gananciaDAPCredito,totalInversionReal,totalCompromisosProx,compromisosProx,totalCompromisosMes,totalGuardadoMes,compromisosMes,alertas,kmMesActual,kmAnioActual,kmPorDia,tractosEnOperacion,tractosParados,tractosParadosLista,ventanaUtilDias,tractosDespachadosDia,pctDespachadosDia,totalContratados,totalEnExpedicion,totalNoActivos,pctOcupacionConductores,tractosActivosAyer,pctTractosAyer,totalTractocamiones,pctOcupacionTractos,lastFullDayLabel,viajesAyer,viajesAyerLabel,despachosMesLabel,totalMesAnteriorCorte,ventasDiaCorte,leasingContratosActivos,leasingOperaciones,leasingTractosTotal,leasingEmisores,leasingTotalCuotaIVA,leasingTotalCuotaSinIVA,leasingDeudaTotal,leasingDeudaTotalUF,leasingTotalUF,leasingProxCuotas,leasingProyeccion,cuotaDia5UF,cuotaDia15UF,leasingDet,creditoRows,creditoSaldoActual,creditoCapitalPendiente,creditoDeudaTotal,creditoValorCuota,creditoTotalCuotas,creditoProxima,creditoCuotasPagadas,creditoCuotasPorPagar,creditoTotalIntereses,creditoTotalCapital,creditoInteresesPendientes,curMonth,curYear,ventasPorMesComparado,ventasPorMesConProyeccion,acumActual,acumAnterior,acumCorteActual,acumCorteAnterior,prevYear,ultimasFacturas,tractosUnicosMes,diasConDatosTractos,projections,mepcoActivo,mepcoHistoricoCerrado,mepcoCorteLabel,impactoMepcoMes,impactoMepcoAcum,pozoCombustibleAcum,pozoCombustibleMes,pozoCombustibleVolM3,pozoCombustibleDocs,pozoCombustibleMeta,coberturaPozoMepco,brechaPozoMepco,margenMesEstimado,margenMesEstimadoCaja,totalMesAnteriorBruto,leasingMesEstimado,creditoMesEstimado,coberturaSemanas,coberturaRatio30,coberturaRatio30ConColchon,liquidez30,liquidez30Total,colchonAdicional30,comp30,dap30,dapTrabajoVence30,dapCreditoVence30,dapInversionVence30,primeraSemanaCritica,proyMesActualPorViajes,proyMesSiguientePorViajes,proyAnualPorViajes,tasaGlobal,tasaPorCliente,desgloseMesActualProy,facturacionProyectadaPorViajes,facturacionProyViajesSinMepco,upliftPorMes,desglosePorMesFactura,comp60Total,proyViajesHibrido,viajesProyectadosFaltantes,proyViajesProrrateoSimple,proyViajesEstacional,proyViajesDiaSemana,proyViajesRunRatePlano,ritmoDiaReciente,diasCompletosMes,topClientesViajesProy,alertasClienteDiag,diasTranscurridosMes,diasTotalesMes,totalMesActualBruto,leasingDeudaTotalIVA,creditoMontoOriginal,creditoCuotasGracia,concentracionTop2,tarifaPorMes,cumplimientoMensual,servicioDeudaMensual,frescuraFuentes,tractosParados30,flotaOperativa,pctOcupacionTractosOperativa,kmMesAnteriorCorte,topRutas,rutasDistintas,rutasViajesTotal,rutasKmTotal,concentracionTop5Rutas,topConductores,conductoresConViajes,kmPromedioConductor,conductoresBajaUtilizacion,genPorCamionPorMes,genPorCamionMensual,genPorCamionAnual,genPorCamionYTD,camionesOperativosProm,tractosOperativosPorMes,genPorCamionMesEnCurso,genMesesCerradosN,ingresoEstimado};
 }

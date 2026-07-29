@@ -125,6 +125,60 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
         <KpiCard icon={Target} label={`Meta: superar ${C.prevYear}`} value={fmtM(C.ventasAnoAnterior)} T={T} sub={`Falta ${fmtM(Math.max(0,C.ventasAnoAnterior-C.ventasAnoActual))}`} color={T.amber} colorBg={T.amberBg}/>
       </div>
 
+      {C.ingresoEstimado?.viajes>0&&(()=>{
+        const IE=C.ingresoEstimado;
+        const cob=Math.round(IE.cobertura*100);
+        const hoy=new Date().getDate();
+        const dataDias=IE.porDia.map(p=>({dia:String(p.dia),monto:p.monto/1e6,parcial:p.dia===hoy}));
+        return(
+          <SectionCard title={`Ingreso estimado ${mesLabel} — la plata de los viajes, sin esperar la factura`} icon={Activity} T={T} color={T.teal}
+            action={<span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,background:cob>=85?T.greenBg:T.amberBg,color:cob>=85?T.green:T.amber,letterSpacing:0.4}}>{cob}% DE VIAJES CON TARIFA</span>}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(190px, 1fr))",gap:12}}>
+              <div style={{padding:"12px 14px",borderRadius:10,background:T.tealBg,border:`1px solid ${T.teal}33`}}>
+                <div style={{fontSize:11,color:T.teal,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Estimado a la fecha</div>
+                <div style={{fontSize:22,fontWeight:800,color:T.tx}}>{fmtM(IE.total)}</div>
+                <div style={{fontSize:11,color:T.txM,marginTop:2}}>viajes del 1 al {hoy} valorizados con tarifario TMS</div>
+              </div>
+              <div style={{padding:"12px 14px",borderRadius:10,background:T.bg3+"44",border:`1px solid ${T.border}`}}>
+                <div style={{fontSize:11,color:T.txM,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Viajes valorizados</div>
+                <div style={{fontSize:22,fontWeight:800,color:T.tx}}>{IE.cubiertos.toLocaleString("es-CL")}<span style={{fontSize:13,color:T.txM,fontWeight:600}}> de {IE.viajes.toLocaleString("es-CL")}</span></div>
+                <div style={{fontSize:11,color:T.txM,marginTop:2}}>los sin tarifa son rutas nuevas sin historial</div>
+              </div>
+              <div style={{padding:"12px 14px",borderRadius:10,background:T.bg3+"44",border:`1px solid ${T.border}`}}>
+                <div style={{fontSize:11,color:T.txM,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Ritmo diario</div>
+                <div style={{fontSize:22,fontWeight:800,color:T.tx}}>{fmtM(IE.promedioDiario)}</div>
+                <div style={{fontSize:11,color:T.txM,marginTop:2}}>promedio por día completo del mes</div>
+              </div>
+            </div>
+            <div style={{marginTop:14}}>
+              <ResponsiveContainer width="100%" height={170}>
+                <BarChart data={dataDias}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+                  <XAxis dataKey="dia" tick={{fill:T.txM,fontSize:10}} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v.toFixed(0)}M`} width={48}/>
+                  <Tooltip formatter={(v)=>fmtM(v*1e6)} labelFormatter={(d)=>`Día ${d}`} contentStyle={{background:T.tooltipBg,border:`1px solid ${T.border}`,borderRadius:8,fontSize:12}} labelStyle={{color:T.tooltipTx,fontWeight:600}}/>
+                  <Bar dataKey="monto" name="Estimado del día" radius={[3,3,0,0]}>
+                    {dataDias.map((d,i)=><Cell key={i} fill={T.teal} fillOpacity={d.parcial?0.4:0.9}/>)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{marginTop:6,overflowX:"auto"}}>
+              <MiniTable T={T} headers={["Cliente","Viajes","Con tarifa","Estimado a la fecha"]} rows={IE.topClientes.slice(0,8).map(c=>[
+                c.name.length>26?c.name.slice(0,24)+"…":c.name,
+                c.viajes,
+                `${c.cubiertos}/${c.viajes}`,
+                <span key="e" style={{color:T.teal,fontWeight:700}}>{fmtM(c.estimado)}</span>,
+              ])}/>
+            </div>
+            <div style={{marginTop:10,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
+              <strong style={{color:T.tx}}>Cómo leer esto: </strong>
+              Cada viaje de la planilla se valoriza <strong>el día que ocurre</strong> con la última tarifa conocida de su ruta (informes de facturación del TMS, viajes hasta el {IE.meta.ultimaFechaViaje}), más el recargo histórico de cada cliente por estadías, escoltas y otros ítems. <strong>No es facturación</strong> — es el anticipo de la plata que los informes mostrarán en ~1 mes. Si hubo reajuste de tarifas reciente (MEPCO), tiende a quedarse corto. Backtest junio 2026: −1,2% vs lo cobrado real; el día en curso se dibuja más claro porque aún está a medias.
+            </div>
+          </SectionCard>
+        );
+      })()}
+
       <div style={{background:T.card,borderRadius:14,padding:"14px 18px",border:`1px solid ${T.border}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:10}}>
           <div>
