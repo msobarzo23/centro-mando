@@ -1231,7 +1231,12 @@ export function computeAll(data) {
         corte:corte-1,nMeses:n,
       };
     }
-    return {total:totalEst,viajes:delMes.length,cubiertos,cobertura:delMes.length?cubiertos/delMes.length:0,porDia,topClientes,promedioDiario,tendencia,meta:TARIFARIO_META};
+    // Los viajes SIN tarifa conocida (rutas nuevas) no entran en `total`; se
+    // informan aparte valorizados al promedio de los que sí tienen tarifa, para
+    // que la tarjeta no se lea como "todo lo generado" cuando la cobertura <100%.
+    const sinTarifa=delMes.length-cubiertos;
+    const estimadoSinTarifa=cubiertos>0?sinTarifa*(totalEst/cubiertos):0;
+    return {total:totalEst,viajes:delMes.length,cubiertos,cobertura:delMes.length?cubiertos/delMes.length:0,sinTarifa,estimadoSinTarifa,porDia,topClientes,promedioDiario,tendencia,meta:TARIFARIO_META};
   })();
 
   // Proyección del PRÓXIMO mes con tarifario: lo que se facture el mes que viene

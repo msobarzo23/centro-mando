@@ -149,7 +149,12 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
               <div style={{padding:"12px 14px",borderRadius:10,background:T.tealBg,border:`1px solid ${T.teal}33`}}>
                 <div style={{fontSize:11,color:T.teal,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Estimado a la fecha</div>
                 <div style={{fontSize:22,fontWeight:800,color:T.tx}}>{fmtM(IE.total)}</div>
-                <div style={{fontSize:11,color:T.txM,marginTop:2}}>viajes del 1 al {hoy} valorizados con tarifario TMS</div>
+                <div style={{fontSize:11,color:T.txM,marginTop:2}}>solo los {IE.cubiertos.toLocaleString("es-CL")} viajes con tarifa conocida (1 al {hoy})</div>
+                {IE.sinTarifa>0&&(
+                  <div style={{fontSize:11,color:T.txM,marginTop:2}}>
+                    + <strong style={{color:T.tx}}>{fmtM(IE.estimadoSinTarifa)}</strong> si los {IE.sinTarifa} sin tarifa van al promedio → <strong style={{color:T.tx}}>{fmtM(IE.total+IE.estimadoSinTarifa)}</strong>
+                  </div>
+                )}
                 <Trend pct={TD?.estimadoPct}/>
               </div>
               <div style={{padding:"12px 14px",borderRadius:10,background:T.bg3+"44",border:`1px solid ${T.border}`}}>
