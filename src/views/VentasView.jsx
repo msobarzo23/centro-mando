@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import { useState } from "react";
 import {
-  DollarSign, TrendingUp, Target, BarChart3, Activity, Users, FileText, Zap, FileSpreadsheet, Search, Fuel, PieChart as PieChartIcon, Route,
+  DollarSign, TrendingUp, Target, BarChart3, Activity, Users, FileText, Zap, FileSpreadsheet, Search, Fuel, PieChart as PieChartIcon, Route, AlertTriangle,
 } from "lucide-react";
 import { Sparkles } from "lucide-react";
 import { MESES, MESES_FULL, MEPCO_ADJUSTMENT_MONTH } from "../constants.js";
@@ -174,6 +174,61 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
             <div style={{marginTop:10,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
               <strong style={{color:T.tx}}>Cómo leer esto: </strong>
               Cada viaje de la planilla se valoriza <strong>el día que ocurre</strong> con la última tarifa conocida de su ruta (informes de facturación del TMS, viajes hasta el {IE.meta.ultimaFechaViaje}), más el recargo histórico de cada cliente por estadías, escoltas y otros ítems. <strong>No es facturación</strong> — es el anticipo de la plata que los informes mostrarán en ~1 mes. Si hubo reajuste de tarifas reciente (MEPCO), tiende a quedarse corto. Backtest junio 2026: −1,2% vs lo cobrado real; el día en curso se dibuja más claro porque aún está a medias.
+            </div>
+          </SectionCard>
+        );
+      })()}
+
+      {C.noFacturado&&(()=>{
+        const NF=C.noFacturado;
+        const mesLbl=(ym)=>`${MESES[+ym.slice(5)-1]} ${ym.slice(2,4)}`;
+        const dataMeses=NF.meses.map(m=>({mes:mesLbl(m.mes),monto:m.monto/1e6,viajes:m.viajes}));
+        const sinValor=NF.meta.viajes-NF.meta.valorizados;
+        const peorMes=NF.meses.reduce((mx,m)=>m.monto>(mx?.monto||0)?m:mx,null);
+        return(
+          <SectionCard title={`Viajes sin facturar ${mesLbl(NF.meta.desde)} – ${mesLbl(NF.meta.hasta)} — plata que quedó sin cobrar`} icon={AlertTriangle} T={T} color={T.red}
+            action={<span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,background:T.redBg,color:T.red,letterSpacing:0.4}}>CORTE {NF.meta.generado}</span>}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(190px, 1fr))",gap:12}}>
+              <div style={{padding:"12px 14px",borderRadius:10,background:T.redBg,border:`1px solid ${T.red}33`}}>
+                <div style={{fontSize:11,color:T.red,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Total sin facturar</div>
+                <div style={{fontSize:22,fontWeight:800,color:T.tx}}>{fmtM(NF.total)}</div>
+                <div style={{fontSize:11,color:T.txM,marginTop:2}}>viajes con guía de meses cerrados, nunca facturados</div>
+              </div>
+              <div style={{padding:"12px 14px",borderRadius:10,background:T.bg3+"44",border:`1px solid ${T.border}`}}>
+                <div style={{fontSize:11,color:T.txM,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Viajes por cobrar</div>
+                <div style={{fontSize:22,fontWeight:800,color:T.tx}}>{NF.meta.viajes.toLocaleString("es-CL")}</div>
+                <div style={{fontSize:11,color:T.txM,marginTop:2}}>{NF.meta.valorizados} valorizados{sinValor>0?` · ${sinValor} sin tarifa conocida`:""}</div>
+              </div>
+              {peorMes&&(
+                <div style={{padding:"12px 14px",borderRadius:10,background:T.bg3+"44",border:`1px solid ${T.border}`}}>
+                  <div style={{fontSize:11,color:T.txM,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Mes más golpeado</div>
+                  <div style={{fontSize:22,fontWeight:800,color:T.tx}}>{mesLbl(peorMes.mes)}</div>
+                  <div style={{fontSize:11,color:T.txM,marginTop:2}}>{fmtM(peorMes.monto)} en {peorMes.viajes} viajes</div>
+                </div>
+              )}
+            </div>
+            <div style={{marginTop:14}}>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={dataMeses}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
+                  <XAxis dataKey="mes" tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{fill:T.txM,fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v.toFixed(0)}M`} width={48}/>
+                  <Tooltip formatter={(v,n,p)=>[`${fmtM(v*1e6)} · ${p.payload.viajes} viajes`,"Sin facturar"]} contentStyle={{background:T.tooltipBg,border:`1px solid ${T.border}`,borderRadius:8,fontSize:12}} labelStyle={{color:T.tooltipTx,fontWeight:600}}/>
+                  <Bar dataKey="monto" name="Sin facturar" radius={[3,3,0,0]} fill={T.red} fillOpacity={0.85}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{marginTop:6,overflowX:"auto"}}>
+              <MiniTable T={T} headers={["Cliente","Viajes","Valorizados","Sin facturar"]} rows={NF.clientes.slice(0,10).map(c=>[
+                c.cliente.length>30?c.cliente.slice(0,28)+"…":c.cliente,
+                c.viajes,
+                `${c.valorizados}/${c.viajes}`,
+                <span key="m" style={{color:T.red,fontWeight:700}}>{c.monto>0?fmtM(c.monto):"sin tarifa"}</span>,
+              ])}/>
+            </div>
+            <div style={{marginTop:10,padding:"10px 12px",background:T.bg3+"44",borderRadius:8,fontSize:11,color:T.txM,lineHeight:1.5}}>
+              <strong style={{color:T.tx}}>Cómo leer esto: </strong>
+              Descarga semanal del TMS con los viajes realizados que <strong>nunca se facturaron</strong> (solo ítem "valor viaje" y solo con nº de guía; {NF.meta.sinGuia} sin guía quedan fuera). Se valorizan con el valor que el propio TMS registró para el viaje o, si trae un valor de relleno, con la última tarifa conocida de esa ruta ({NF.meta.fuenteTms} por valor TMS, {NF.meta.fuenteTarifaCliente} por tarifa del cliente, {NF.meta.fuenteTarifaRuta} por tarifa de la ruta). No incluye el mes anterior inmediato porque sus viajes aún pueden facturarse. Esta plata explica parte de la brecha entre viajes hechos y metas de facturación.
             </div>
           </SectionCard>
         );

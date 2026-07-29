@@ -157,7 +157,10 @@ export default function HomeView({ C, T, setTab, compareMode, setCompareMode }) 
       </div>
 
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-        <KpiCard icon={TrendingUp} label={`Fact. proyectada ${C.curMonth<11?MESES[C.curMonth+1]:"Ene"}`} value={C.proyMesSiguientePorViajes>0?fmtM(C.proyMesSiguientePorViajes):"—"} T={T} sub={C.proyMesSiguientePorViajes>0?`Basada en viajes ${MESES[C.curMonth]} × tarifa hist.`:"Sin viajes mes actual"} color={T.teal} colorBg={T.tealBg} badge="PRÓX. MES"/>
+        <KpiCard icon={TrendingUp} label={`Fact. proyectada ${C.curMonth<11?MESES[C.curMonth+1]:"Ene"}`}
+          value={(C.proyMesSiguienteTarifario||C.proyMesSiguientePorViajes)>0?fmtM(C.proyMesSiguienteTarifario||C.proyMesSiguientePorViajes):"—"} T={T}
+          sub={C.proyMesSiguienteTarifario>0?`Viajes ${MESES[C.curMonth]} × tarifa TMS real, mes completo`:C.proyMesSiguientePorViajes>0?`Basada en viajes ${MESES[C.curMonth]} × tarifa hist.`:"Sin viajes mes actual"}
+          color={T.teal} colorBg={T.tealBg} badge="PRÓX. MES"/>
         {/* Usa la variante CAJA (facturación del mes CERRADO anterior): la otra
             restaba los costos del mes completo a la facturación parcial y salía
             en rojo garantizado los primeros ~15 días de cada mes. */}
