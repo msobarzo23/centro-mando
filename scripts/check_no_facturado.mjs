@@ -23,6 +23,11 @@ const IE = C.ingresoEstimado;
 console.log(`\nIngreso estimado mes en curso: ${f(IE.total)} (${IE.cubiertos}/${IE.viajes} viajes, ${(IE.cobertura * 100).toFixed(0)}% cobertura)`);
 console.log(`Valor medio por viaje valorizado: $${Math.round(IE.total / IE.cubiertos).toLocaleString("es-CL")}`);
 console.log(`Viajes proyectados mes completo (proyViajesHibrido): ${C.proyViajesHibrido}`);
+if (IE.tendencia) {
+  const t = IE.tendencia;
+  const p = (v) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+  console.log(`Tendencia vs prom. ${t.nMeses} meses previos al día ${t.corte}: estimado ${p(t.estimadoPct)} · viajes ${p(t.viajesPct)} · ritmo ${p(t.ritmoPct)}`);
+}
 console.log(`\nProyección próx. mes NUEVA (tarifario):    ${f(C.proyMesSiguienteTarifario)}`);
 console.log(`Proyección próx. mes VIEJA (viajes×tasa):  ${f(C.proyMesSiguientePorViajes)}`);
 console.log(`Facturado real del mes en curso a la fecha: ${f(C.totalMesActual)}`);

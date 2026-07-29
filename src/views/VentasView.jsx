@@ -130,6 +130,18 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
         const cob=Math.round(IE.cobertura*100);
         const hoy=new Date().getDate();
         const dataDias=IE.porDia.map(p=>({dia:String(p.dia),monto:p.monto/1e6,parcial:p.dia===hoy}));
+        const TD=IE.tendencia;
+        const mesesTend=TD?(TD.mesesLabel.length>1?`${MESES[TD.mesesLabel[0]]}–${MESES[TD.mesesLabel[TD.mesesLabel.length-1]]}`:MESES[TD.mesesLabel[0]]):"";
+        const Trend=({pct,label})=>{
+          if(TD==null||pct==null)return null;
+          const up=pct>=0;
+          return(
+            <div style={{fontSize:11,fontWeight:700,color:up?T.green:T.red,marginTop:4}}>
+              {up?"▲":"▼"} {up?"+":"−"}{Math.abs(pct).toFixed(0)}%
+              <span style={{color:T.txM,fontWeight:600}}> {label||`vs prom. ${mesesTend} al día ${TD.corte}`}</span>
+            </div>
+          );
+        };
         return(
           <SectionCard title={`Ingreso estimado ${mesLabel} — la plata de los viajes, sin esperar la factura`} icon={Activity} T={T} color={T.teal}
             action={<span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,background:cob>=85?T.greenBg:T.amberBg,color:cob>=85?T.green:T.amber,letterSpacing:0.4}}>{cob}% DE VIAJES CON TARIFA</span>}>
@@ -138,16 +150,19 @@ export default function VentasView({ C, T, projectionMode, setProjectionMode }) 
                 <div style={{fontSize:11,color:T.teal,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Estimado a la fecha</div>
                 <div style={{fontSize:22,fontWeight:800,color:T.tx}}>{fmtM(IE.total)}</div>
                 <div style={{fontSize:11,color:T.txM,marginTop:2}}>viajes del 1 al {hoy} valorizados con tarifario TMS</div>
+                <Trend pct={TD?.estimadoPct}/>
               </div>
               <div style={{padding:"12px 14px",borderRadius:10,background:T.bg3+"44",border:`1px solid ${T.border}`}}>
                 <div style={{fontSize:11,color:T.txM,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Viajes valorizados</div>
                 <div style={{fontSize:22,fontWeight:800,color:T.tx}}>{IE.cubiertos.toLocaleString("es-CL")}<span style={{fontSize:13,color:T.txM,fontWeight:600}}> de {IE.viajes.toLocaleString("es-CL")}</span></div>
                 <div style={{fontSize:11,color:T.txM,marginTop:2}}>los sin tarifa son rutas nuevas sin historial</div>
+                <Trend pct={TD?.viajesPct}/>
               </div>
               <div style={{padding:"12px 14px",borderRadius:10,background:T.bg3+"44",border:`1px solid ${T.border}`}}>
                 <div style={{fontSize:11,color:T.txM,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>Ritmo diario</div>
                 <div style={{fontSize:22,fontWeight:800,color:T.tx}}>{fmtM(IE.promedioDiario)}</div>
                 <div style={{fontSize:11,color:T.txM,marginTop:2}}>promedio por día completo del mes</div>
+                <Trend pct={TD?.ritmoPct} label="últimos 7 días vs promedio del mes"/>
               </div>
             </div>
             <div style={{marginTop:14}}>

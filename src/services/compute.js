@@ -1191,7 +1191,47 @@ export function computeAll(data) {
     // Ritmo diario con días COMPLETOS: el día en curso va a medias y lo hundiría.
     const diasCompletos=porDia.filter(p=>p.dia<now.getDate());
     const promedioDiario=diasCompletos.length?diasCompletos.reduce((s,p)=>s+p.monto,0)/diasCompletos.length:0;
-    return {total:totalEst,viajes:delMes.length,cubiertos,cobertura:delMes.length?cubiertos/delMes.length:0,porDia,topClientes,promedioDiario,meta:TARIFARIO_META};
+    // Tendencia: el mismo ejercicio sobre los 3 meses previos, MISMO corte de
+    // días (1..ayer) y MISMAS tarifas de hoy. Con tarifas iguales a ambos lados
+    // el % compara volumen y mix de viajes, no inflación de tarifas; contra el
+    // mes completo un mes a medias siempre saldría "a la baja" sin significado.
+    const corte=now.getDate();
+    const prevMeses=[];
+    for(let b=1;b<=3;b++){
+      let m=curMonth-b,y=curYear;if(m<0){m+=12;y--;}
+      let tot=0,nv=0;
+      viajesRows.forEach(r=>{
+        if(r._date.getFullYear()!==y||r._date.getMonth()!==m||r._date.getDate()>=corte)return;
+        if(nT(r.Estado||r.estado)==="VIAJE ANULADO")return;
+        nv++;
+        const cli=nT(r._cliente),ori=nT(r.origen||r.Origen),des=nT(r.destino||r.Destino),eq=nT(r._equipo);
+        let t=exact.get(`${cli}|${ori}|${des}|${eq}`);
+        if(t==null){const fx=flex.get(`${cli}|${ori}|${des}`);t=fx?fx.t:null;}
+        if(t!=null)tot+=t*(1+(EXTRAS_PCT[cli]??EXTRAS_PCT._global??0));
+      });
+      if(nv>0)prevMeses.push({mes:m,viajes:nv,estimado:tot});
+    }
+    let tendencia=null;
+    if(prevMeses.length&&corte>1){
+      const n=prevMeses.length;
+      const baseEst=prevMeses.reduce((s,p)=>s+p.estimado,0)/n;
+      const baseViajes=prevMeses.reduce((s,p)=>s+p.viajes,0)/n;
+      const estCorte=diasCompletos.reduce((s,p)=>s+p.monto,0);
+      const viajesCorte=delMes.filter(r=>r._date.getDate()<corte).length;
+      const pct=(a,b)=>b>0?((a-b)/b)*100:null;
+      // El ritmo compara DENTRO del mes (últimos 7 días completos vs promedio del
+      // mes): contra los meses previos daría el mismo % que "estimado a la fecha".
+      const ult7=diasCompletos.filter(p=>p.dia>=corte-7);
+      const ritmo7=ult7.length>=4?ult7.reduce((s,p)=>s+p.monto,0)/ult7.length:null;
+      tendencia={
+        estimadoPct:pct(estCorte,baseEst),
+        viajesPct:pct(viajesCorte,baseViajes),
+        ritmoPct:(ritmo7!=null&&diasCompletos.length>=10)?pct(ritmo7,promedioDiario):null,
+        mesesLabel:prevMeses.map(p=>p.mes).reverse(),
+        corte:corte-1,nMeses:n,
+      };
+    }
+    return {total:totalEst,viajes:delMes.length,cubiertos,cobertura:delMes.length?cubiertos/delMes.length:0,porDia,topClientes,promedioDiario,tendencia,meta:TARIFARIO_META};
   })();
 
   // Proyección del PRÓXIMO mes con tarifario: lo que se facture el mes que viene
