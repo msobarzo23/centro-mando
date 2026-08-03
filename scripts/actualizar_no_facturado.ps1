@@ -1,4 +1,4 @@
-# Actualiza los viajes sin facturar del dashboard (flujo semanal):
+﻿# Actualiza los viajes sin facturar del dashboard (flujo semanal):
 #   1. Descargar del TMS la consulta de viajes sin facturar -> Downloads\Consulta(77).xls
 #   2. Correr este script:  powershell -File scripts\actualizar_no_facturado.ps1
 #   3. Revisar el resumen, luego commit + push (Vercel despliega solo).
