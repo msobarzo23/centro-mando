@@ -3,6 +3,9 @@
 //  - Solo filas con costo "VALOR VIAJE" (estadías, escoltas, viajes falsos,
 //    adicionales, etc. quedan fuera).
 //  - Sin nº de guía se ignora (no hay documento que cobrar).
+//  - MAXAM queda fuera (acordado 03-08-2026): factura por ciclo del 26 de un
+//    mes al 25 del siguiente, así que sus viajes aparecen "sin facturar" en el
+//    TMS sin estar atrasados — se facturan al cierre del ciclo.
 //  - Valorización: el valor que trae el propio TMS para ese viaje si es creíble
 //    (> $10.000; el TMS usa "1" o "0" de relleno); si no, la última tarifa del
 //    tarifario para cliente+origen+destino; último recurso, la última tarifa de
@@ -68,7 +71,7 @@ const ci = {};
   if (ci[k] < 0) throw new Error(`El CSV no trae la columna ${k} (encabezado: ${head.join(", ")})`);
 });
 
-let totalFilas = 0, noViaje = 0, sinGuia = 0;
+let totalFilas = 0, noViaje = 0, sinGuia = 0, excluidosMaxam = 0;
 const viajes = [];
 for (const r of rows.slice(1)) {
   if (r.length < head.length - 1) continue;
@@ -82,6 +85,7 @@ for (const r of rows.slice(1)) {
   const sol = (r[ci.SOLICITUD] || "").trim();
   const cliTMS = norm(r[ci.CLIENTE]);
   const cliente = cliDeSolicitud.get(sol) || cliTMS;
+  if (/\bMAXAM\b/.test(cliente) || /\bMAXAM\b/.test(cliTMS)) { excluidosMaxam++; continue; }
   const ori = norm(r[ci.ORIGEN]), des = norm(r[ci.DESTINO]);
   const propio = +String(r[ci.VALOR] || "").replace(/[^\d-]/g, "") || 0;
   let monto = 0, fuente = null;
@@ -132,7 +136,7 @@ const js = `// AUTOGENERADO por scripts/generar_no_facturado.mjs — no editar a
 // valor propio del TMS o, en su defecto, el tarifario de src/data/tarifario.js.
 export const NO_FACTURADO_META = ${JSON.stringify({
   generado: gen, desde: meses[0]?.mes || null, hasta: meses[meses.length - 1]?.mes || null,
-  viajes: viajes.length, valorizados, sinGuia, excluidosNoViaje: noViaje,
+  viajes: viajes.length, valorizados, sinGuia, excluidosNoViaje: noViaje, excluidosMaxam,
   fuenteTms: porFuente.tms, fuenteTarifaCliente: porFuente.cliente, fuenteTarifaRuta: porFuente.ruta,
 })};
 
@@ -145,7 +149,7 @@ export const NO_FACTURADO_CLIENTES = ${JSON.stringify(clientes.map(c => ({ ...c,
 export const NO_FACTURADO_MESES = ${JSON.stringify(meses.map(m => ({ ...m, monto: Math.round(m.monto) })))};
 `;
 fs.writeFileSync(OUT, js, "utf8");
-console.log(`Filas TMS: ${totalFilas} · no-viaje: ${noViaje} · viajes sin guía (ignorados): ${sinGuia}`);
+console.log(`Filas TMS: ${totalFilas} · no-viaje: ${noViaje} · viajes sin guía (ignorados): ${sinGuia} · MAXAM excluidos (ciclo 26→25): ${excluidosMaxam}`);
 console.log(`Viajes a cobrar: ${viajes.length} · valorizados: ${valorizados} (tms ${porFuente.tms} / tarifa cliente ${porFuente.cliente} / tarifa ruta ${porFuente.ruta})`);
 console.log(`TOTAL NO FACTURADO: $${Math.round(total).toLocaleString("es-CL")}`);
 console.log(`Escrito ${OUT}`);
