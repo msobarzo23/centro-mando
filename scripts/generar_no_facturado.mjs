@@ -21,6 +21,12 @@ import { fileURLToPath } from "node:url";
 import { TARIFAS } from "../src/data/tarifario.js";
 
 const CSV = process.argv[2] || path.join(os.tmpdir(), "consulta77.csv");
+// Exclusión puntual de viajes ya facturados que el TMS aún muestra pendientes
+// (p. ej. YURA Consulta(92): factura emitida sin ingresar). El archivo trae
+// pares "solicitud|guía"; cuando la factura se asigne en el TMS esos viajes
+// dejan de venir en la consulta y el archivo puede borrarse sin efecto.
+const EXCL_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "excluidos_facturados.json");
+const EXCL = fs.existsSync(EXCL_PATH) ? new Set(JSON.parse(fs.readFileSync(EXCL_PATH, "utf8")).pares) : new Set();
 const VIAJES_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfKblo0PEPiyzfOniTQzk0HEf7fBeH1yC0SFBfKO0sMnGhPPEWI0T7fRtPA9rcXx8VPsptR3T835xa/pub?gid=0&single=true&output=csv";
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "data", "noFacturado.js");
 const MIN_VALOR_TMS = 10000;
@@ -71,7 +77,7 @@ const ci = {};
   if (ci[k] < 0) throw new Error(`El CSV no trae la columna ${k} (encabezado: ${head.join(", ")})`);
 });
 
-let totalFilas = 0, noViaje = 0, sinGuia = 0, excluidosMaxam = 0;
+let totalFilas = 0, noViaje = 0, sinGuia = 0, excluidosMaxam = 0, excluidosFacturados = 0;
 const viajes = [];
 for (const r of rows.slice(1)) {
   if (r.length < head.length - 1) continue;
@@ -86,6 +92,8 @@ for (const r of rows.slice(1)) {
   const cliTMS = norm(r[ci.CLIENTE]);
   const cliente = cliDeSolicitud.get(sol) || cliTMS;
   if (/\bMAXAM\b/.test(cliente) || /\bMAXAM\b/.test(cliTMS)) { excluidosMaxam++; continue; }
+  const guias = String(r[ci.GUIA]).split(/[,;]/).map(x => x.trim()).filter(Boolean);
+  if (guias.some(g => EXCL.has(`${sol}|${g}`))) { excluidosFacturados++; continue; }
   const ori = norm(r[ci.ORIGEN]), des = norm(r[ci.DESTINO]);
   const propio = +String(r[ci.VALOR] || "").replace(/[^\d-]/g, "") || 0;
   let monto = 0, fuente = null;
@@ -136,7 +144,7 @@ const js = `// AUTOGENERADO por scripts/generar_no_facturado.mjs — no editar a
 // valor propio del TMS o, en su defecto, el tarifario de src/data/tarifario.js.
 export const NO_FACTURADO_META = ${JSON.stringify({
   generado: gen, desde: meses[0]?.mes || null, hasta: meses[meses.length - 1]?.mes || null,
-  viajes: viajes.length, valorizados, sinGuia, excluidosNoViaje: noViaje, excluidosMaxam,
+  viajes: viajes.length, valorizados, sinGuia, excluidosNoViaje: noViaje, excluidosMaxam, excluidosFacturados,
   fuenteTms: porFuente.tms, fuenteTarifaCliente: porFuente.cliente, fuenteTarifaRuta: porFuente.ruta,
 })};
 
@@ -149,7 +157,7 @@ export const NO_FACTURADO_CLIENTES = ${JSON.stringify(clientes.map(c => ({ ...c,
 export const NO_FACTURADO_MESES = ${JSON.stringify(meses.map(m => ({ ...m, monto: Math.round(m.monto) })))};
 `;
 fs.writeFileSync(OUT, js, "utf8");
-console.log(`Filas TMS: ${totalFilas} · no-viaje: ${noViaje} · viajes sin guía (ignorados): ${sinGuia} · MAXAM excluidos (ciclo 26→25): ${excluidosMaxam}`);
+console.log(`Filas TMS: ${totalFilas} · no-viaje: ${noViaje} · viajes sin guía (ignorados): ${sinGuia} · MAXAM excluidos (ciclo 26→25): ${excluidosMaxam} · ya facturados excluidos: ${excluidosFacturados}`);
 console.log(`Viajes a cobrar: ${viajes.length} · valorizados: ${valorizados} (tms ${porFuente.tms} / tarifa cliente ${porFuente.cliente} / tarifa ruta ${porFuente.ruta})`);
 console.log(`TOTAL NO FACTURADO: $${Math.round(total).toLocaleString("es-CL")}`);
 console.log(`Escrito ${OUT}`);
