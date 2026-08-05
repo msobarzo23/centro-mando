@@ -258,16 +258,16 @@ export default function SimulacionLeasingView({ T }) {
 
       {/* ── PARTE DE PAGO ── */}
       <SectionCard title="Tractos en parte de pago (opcional)" icon={Truck} T={T} color={T.purple}
-        action={hayPP && <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: T.purpleBg, color: T.purple }}>{fmtFull(r.ppCLP)}</span>}>
+        action={hayPP && <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: T.purpleBg, color: T.purple }}>{fmtFull(r.ppCLP * conIVA)} IVA incl.</span>}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
           <Field T={T} label="Tractos usados que se entregan" value={ppCant} onChange={setPpCant} suffix="u." />
           <Field T={T} label="Valor neto por tracto usado" value={ppValor} onChange={setPpValor} suffix="$"
-            hint={hayPP ? `Total: ${fmtFull(r.ppCLP)} = ${fmtUF(r.ppUF)}` : "Lo que el banco/dealer reconoce por cada uno, neto"} />
+            hint={hayPP ? `Total: ${fmtFull(r.ppCLP * conIVA)} con IVA incluido (neto ${fmtFull(r.ppCLP)})` : "Lo que el banco/dealer reconoce por cada uno, neto (sin IVA)"} />
           {hayPP && (
             <div style={{ display: "flex", flexDirection: "column", gap: 5, justifyContent: "center" }}>
               <span style={{ fontSize: 11, fontWeight: 600, color: T.txM }}>Pie en efectivo a la firma</span>
-              <span style={{ fontSize: 18, fontWeight: 800, color: T.tx }}>{fmtFull(toCLP(r.pieEfectivoUF))}</span>
-              <span style={{ fontSize: 10.5, color: T.txD }}>Pie {fmtFull(toCLP(r.pieUF))} − parte de pago {fmtFull(r.ppCLP)}</span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: T.tx }}>{fmtFull(toCLP(r.pieEfectivoUF) * conIVA)}</span>
+              <span style={{ fontSize: 10.5, color: T.txD }}>IVA incluido · Pie {fmtFull(toCLP(r.pieUF) * conIVA)} − parte de pago {fmtFull(r.ppCLP * conIVA)}</span>
             </div>
           )}
         </div>
@@ -275,7 +275,7 @@ export default function SimulacionLeasingView({ T }) {
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 12, padding: "9px 12px", background: T.amberBg, borderRadius: 9, border: `1px solid ${T.amber}33` }}>
             <AlertTriangle size={14} color={T.amber} style={{ flexShrink: 0, marginTop: 1 }} />
             <span style={{ fontSize: 11.5, color: T.txM, lineHeight: 1.5 }}>
-              La parte de pago ({fmtFull(r.ppCLP)}) supera el pie pactado ({fmtFull(toCLP(r.pieUF))}). El excedente de {fmtFull(toCLP(r.ppExcedenteUF))} podría usarse subiendo el pie, lo que bajaría la cuota.
+              La parte de pago ({fmtFull(r.ppCLP * conIVA)} con IVA) supera el pie pactado ({fmtFull(toCLP(r.pieUF) * conIVA)} con IVA). El excedente de {fmtFull(toCLP(r.ppExcedenteUF) * conIVA)} podría usarse subiendo el pie, lo que bajaría la cuota.
             </span>
           </div>
         )}
@@ -303,14 +303,14 @@ export default function SimulacionLeasingView({ T }) {
           )}
           {modo === "pie" && (
             <ResultCard T={T} big label="Pie requerido" custom={fmtPct(r.piePct * 100)}
-              customSub={`${fmtFull(toCLP(r.pieUF))} = ${fmtUF(r.pieUF)}`}
+              customSub={`${fmtFull(toCLP(r.pieUF) * conIVA)} con IVA incluido (neto ${fmtFull(toCLP(r.pieUF))})`}
               color={T.accent} colorBg={T.accentBg} icon={Percent}
               foot={`Para una cuota de ${fmtUF(r.cuotaUF)} a ${r.n} meses`} />
           )}
           <ResultCard T={T} big label="Cuota mensual neta" ufVal={r.cuotaUF} clpVal={toCLP(r.cuotaUF)} color={T.green} colorBg={T.greenBg} icon={Coins} foot={r.nTractos > 1 ? `Total por ${r.nTractos} tractos · ${r.n} meses` : `Durante ${r.n} meses`} />
           <ResultCard T={T} big label="Cuota mensual con IVA" ufVal={r.cuotaUF * conIVA} clpVal={toCLP(r.cuotaUF) * conIVA} color={T.red} colorBg={T.redBg} icon={Coins} foot={r.nTractos > 1 ? `Total por ${r.nTractos} tractos` : "Lo que efectivamente se paga"} />
-          <ResultCard T={T} label={hayPP ? "Pie en efectivo (neto)" : "Pie inicial (neto)"} ufVal={hayPP ? r.pieEfectivoUF : r.pieUF} clpVal={toCLP(hayPP ? r.pieEfectivoUF : r.pieUF)} color={T.amber} colorBg={T.amberBg} icon={Banknote}
-            foot={hayPP ? `Pie ${fmtUF(r.pieUF)} − parte de pago ${fmtUF(r.ppUF)}` : "Se paga a la firma"} />
+          <ResultCard T={T} label={hayPP ? "Pie en efectivo (IVA incluido)" : "Pie inicial (IVA incluido)"} ufVal={(hayPP ? r.pieEfectivoUF : r.pieUF) * conIVA} clpVal={toCLP(hayPP ? r.pieEfectivoUF : r.pieUF) * conIVA} color={T.amber} colorBg={T.amberBg} icon={Banknote}
+            foot={hayPP ? `IVA incluido · neto ${fmtFull(toCLP(r.pieEfectivoUF))}` : `Se paga a la firma · neto ${fmtFull(toCLP(r.pieUF))}`} />
           <ResultCard T={T} label="Opción de compra (neto)" ufVal={r.opcionUF} clpVal={toCLP(r.opcionUF)} color={T.purple} colorBg={T.purpleBg} icon={Truck} foot="Al final del contrato" />
         </div>
       </SectionCard>
@@ -323,11 +323,13 @@ export default function SimulacionLeasingView({ T }) {
               {[
                 ["Valor del tracto (unitario)", fmtFull(r.valorUnitCLP), `US$ ${num(valorUSD).toLocaleString("es-CL")}`],
                 [`Valor total (${r.nTractos} tracto${r.nTractos !== 1 ? "s" : ""})`, fmtFull(r.valorTotalCLP), fmtUF(r.valorUF)],
-                [`Pie (${(r.piePct * 100).toLocaleString("es-CL", { maximumFractionDigits: 1 })}%)`, fmtFull(toCLP(r.pieUF)), fmtUF(r.pieUF)],
+                [`Pie (${(r.piePct * 100).toLocaleString("es-CL", { maximumFractionDigits: 1 })}%, neto)`, fmtFull(toCLP(r.pieUF)), fmtUF(r.pieUF)],
                 ...(hayPP ? [
-                  [`Parte de pago (${r.ppN} tracto${r.ppN !== 1 ? "s" : ""} usado${r.ppN !== 1 ? "s" : ""})`, "− " + fmtFull(r.ppCLP), fmtUF(r.ppUF)],
-                  ["Pie en efectivo a la firma", fmtFull(toCLP(r.pieEfectivoUF)), fmtUF(r.pieEfectivoUF)],
-                ] : []),
+                  [`Parte de pago (${r.ppN} tracto${r.ppN !== 1 ? "s" : ""} usado${r.ppN !== 1 ? "s" : ""}, IVA incl.)`, "− " + fmtFull(r.ppCLP * conIVA), fmtUF(r.ppUF * conIVA)],
+                  ["Pie en efectivo a la firma (IVA incl.)", fmtFull(toCLP(r.pieEfectivoUF) * conIVA), fmtUF(r.pieEfectivoUF * conIVA)],
+                ] : [
+                  ["Pie a pagar a la firma (IVA incl.)", fmtFull(toCLP(r.pieUF) * conIVA), fmtUF(r.pieUF * conIVA)],
+                ]),
                 ["Monto a financiar", fmtFull(toCLP(r.financiadoUF)), fmtUF(r.financiadoUF)],
                 ...(r.nTractos > 1 ? [["Cuota mensual por tracto (neta)", fmtFull(toCLP(r.cuotaUF / r.nTractos)), fmtUF(r.cuotaUF / r.nTractos)]] : []),
                 ["N° de cuotas", `${r.n} meses`, ""],
@@ -383,7 +385,7 @@ export default function SimulacionLeasingView({ T }) {
       <div style={{ padding: "12px 16px", background: T.accentBg, borderRadius: 10, border: `1px solid ${T.accent}22`, display: "flex", gap: 10, alignItems: "flex-start" }}>
         <Info size={15} color={T.accent} style={{ flexShrink: 0, marginTop: 2 }} />
         <div style={{ fontSize: 11.5, color: T.txM, lineHeight: 1.6 }}>
-          <strong style={{ color: T.tx }}>Cómo funciona:</strong> el valor del tracto se ingresa en dólares y se convierte a pesos con el valor del dólar, y luego a UF. Elige arriba qué calcular: la <strong>cuota</strong> (con pie y plazo definidos), el <strong>plazo</strong> necesario para una cuota objetivo, o el <strong>pie</strong> necesario para una cuota y plazo dados. Los <strong>tractos en parte de pago</strong> se descuentan del pie: reducen lo que se paga en efectivo a la firma, no el monto financiado. La <strong>opción de compra</strong> equivale a una cuota mensual (igual que en la simulación N° 352449 de Banchile). Las cuotas y el pie se muestran <strong>netos</strong>; el banco los cobra <strong>+ IVA</strong>. La UF y el dólar se prellenan con el valor de hoy — edítalos si quieres usar otros. Es una estimación referencial; la cuota definitiva y el valor reconocido por los tractos usados los fija el banco.
+          <strong style={{ color: T.tx }}>Cómo funciona:</strong> el valor del tracto se ingresa en dólares y se convierte a pesos con el valor del dólar, y luego a UF. Elige arriba qué calcular: la <strong>cuota</strong> (con pie y plazo definidos), el <strong>plazo</strong> necesario para una cuota objetivo, o el <strong>pie</strong> necesario para una cuota y plazo dados. Los <strong>tractos en parte de pago</strong> se descuentan del pie: reducen lo que se paga en efectivo a la firma, no el monto financiado. La <strong>opción de compra</strong> equivale a una cuota mensual (igual que en la simulación N° 352449 de Banchile). El <strong>pie</strong> y la <strong>parte de pago</strong> se muestran <strong>con IVA incluido</strong> (los valores se ingresan netos y se les aplica el 19%), porque eso es lo que efectivamente se paga a la firma. Las cuotas se muestran netas y también con IVA. La UF y el dólar se prellenan con el valor de hoy — edítalos si quieres usar otros. Es una estimación referencial; la cuota definitiva y el valor reconocido por los tractos usados los fija el banco.
         </div>
       </div>
     </div>
