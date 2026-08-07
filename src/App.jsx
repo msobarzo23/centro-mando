@@ -7,6 +7,7 @@ import { computeAll } from "./services/compute.js";
 import HomeView from "./views/HomeView.jsx";
 import IndicadoresBanner from "./components/IndicadoresBanner.jsx";
 import NoticiasTicker from "./components/NoticiasTicker.jsx";
+import MercadosTicker from "./components/MercadosTicker.jsx";
 
 // Sin esto, cualquier excepción de render (un dato inesperado, un chunk viejo
 // tras un deploy con la pestaña abierta en modo TV) desmontaba la app entera y
@@ -193,6 +194,7 @@ export default function App() {
         </div>
       )}
       <NoticiasTicker T={T}/>
+      <MercadosTicker T={T}/>
       {fetchError && (
         <div style={{background:T.amberBg,borderBottom:`1px solid ${T.amber}44`,padding:"8px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
           <span style={{fontSize:12,color:T.amber}}>{fetchError}</span>
